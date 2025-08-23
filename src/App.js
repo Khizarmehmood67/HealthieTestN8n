@@ -1,6 +1,6 @@
 // src/App.js - Simplified without custom Stripe Elements
 import React, { useState } from 'react';
-import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
+import { ThemeProvider, createTheme, CssBaseline, IconButton } from '@mui/material';
 import { BookingProvider } from './context/BookingContext';
 
 // Components
@@ -11,6 +11,7 @@ import ServiceSelector from './components/ServiceSelector';
 import DoctorSelector from './components/DoctorSelector';
 import PaymentFlow from './components/PaymentFlow';
 import BookingConfirmation from './components/BookingConfirmation';
+import { ArrowBack } from '@mui/icons-material';
 
 const theme = createTheme({
   palette: {
@@ -53,7 +54,13 @@ function App() {
       setCurrentStep(stepOrder[currentIndex + 1]);
     }
   };
-
+  const previousStep = () => {
+    const stepOrder = Object.values(STEPS);
+    const currentIndex = stepOrder.indexOf(currentStep);
+    if (currentIndex > 0) {
+      setCurrentStep(stepOrder[currentIndex - 1]);
+    }
+  };
   const renderCurrentStep = () => {
     switch (currentStep) {
       case STEPS.LOCATION:
@@ -116,6 +123,12 @@ function App() {
             padding: '10px 24px',
             minHeight: '100vh'
           } }>
+            { currentStep === STEPS.LOCATION ? null : < IconButton onClick={ previousStep } disabled={ currentStep === STEPS.LOCATION }
+              sx={ { position: 'absolute', top: 20, left: 20 } } aria-label="back"
+            >
+              <ArrowBack />
+            </IconButton>
+            }
             <BookingHeader />
             <StepIndicator currentStep={ Object.values(STEPS).indexOf(currentStep) + 1 } />
             { renderCurrentStep() }
