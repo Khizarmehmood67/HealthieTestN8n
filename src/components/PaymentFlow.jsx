@@ -2,17 +2,225 @@ import React, { useState, useEffect } from 'react';
 import {
     Box, Typography, Card, CardContent, TextField, Button, Grid,
     Alert, Stepper, Step, StepLabel, Divider, CircularProgress,
-    useTheme, MenuItem
+    useTheme, MenuItem, Radio, RadioGroup, FormControlLabel, Dialog,
+    DialogTitle, DialogContent, DialogActions
 } from '@mui/material';
 import { Security, Person, CreditCard } from '@mui/icons-material';
+import { loadStripe } from '@stripe/stripe-js';
+import {
+    Elements,
+    CardElement,
+    useStripe,
+    useElements
+} from '@stripe/react-stripe-js';
 import healthieAPI from '../services/healthieAPI';
-import { tr } from 'date-fns/locale';
 
+// Initialize Stripe with your publishable key
+const stripePromise = loadStripe('pk_test_51S03pxPJX74EYF1eiChgHRtZ9BVMHgRGsgpNXOV2ZdZn7x2VC71Twle1OFDYy3zxWucGJcnnY1HLc8gNFyr9fU1w00MgDiE1L9');
+
+// Card Payment Component
+const CardPaymentForm = ({ amount, patientData, bookingData, onSuccess, onCancel }) => {
+    const stripe = useStripe();
+    const elements = useElements();
+    const [processing, setProcessing] = useState(false);
+    const [error, setError] = useState(null);
+    const [saveCard, setSaveCard] = useState(true);
+
+    const handleSubmit = async (event) => {
+        event.preventDefault();
+
+        if (!stripe || !elements) {
+            return;
+        }
+
+        setProcessing(true);
+        setError(null);
+
+        try {
+            // Step 1: Create a payment method using Stripe
+            const { error: stripeError, paymentMethod } = await stripe.createPaymentMethod({
+                type: 'card',
+                card: elements.getElement(CardElement),
+                billing_details: {
+                    name: `${patientData.firstName} ${patientData.lastName}`,
+                    email: patientData.email,
+                    phone: patientData.phone
+                }
+            });
+
+            if (stripeError) {
+                throw new Error(stripeError.message);
+            }
+
+            // Step 2: Create or get the client/patient in Healthie
+            let clientId;
+            const existingClient = await healthieAPI.getClientByEmail(patientData.email);
+
+            if (!existingClient) {
+                const newClient = await healthieAPI.createClient({
+                    first_name: patientData.firstName,
+                    last_name: patientData.lastName,
+                    email: patientData.email,
+                    phone: patientData.phone,
+                });
+                clientId = newClient.id;
+            } else {
+                clientId = existingClient.id;
+            }
+
+            // Step 3: Store the card in Healthie to get stripe_customer_detail_id
+            const cardStorageResult = await healthieAPI.storeCard({
+                client_id: clientId,
+                stripe_payment_method_id: paymentMethod.id,
+                is_default: saveCard
+            });
+
+            if (!cardStorageResult || !cardStorageResult.id) {
+                throw new Error('Failed to store payment method');
+            }
+
+            // Step 4: Create a requested payment for tracking
+            // Note: You might want to pass provider_id as recipient_id depending on your workflow
+            const requestedPayment = await healthieAPI.createRequestedPayment({
+                recipient_id: clientId, // or use provider_id if payment goes to provider
+                sender_id: clientId,
+                amount: amount.toString(),
+                service_name: bookingData.service?.name || 'Appointment',
+                appointment_id: bookingData.appointment?.id,
+                offering_id: bookingData.service?.id,
+                status: "Pending"
+            });
+
+            const requestedPaymentId = requestedPayment.id;
+
+            // Step 5: Charge the patient using createBillingItem
+            const billingResult = await healthieAPI.createBillingItem({
+                amount_paid: amount.toString(),
+                sender_id: clientId,
+                requested_payment_id: requestedPaymentId,
+                stripe_idempotency_key: crypto.randomUUID(),
+                stripe_customer_detail_id: cardStorageResult.id,
+                should_charge: true
+            });
+
+            if (billingResult.messages && billingResult.messages.length > 0) {
+                // Handle any error messages from the billing item creation
+                const errorMessages = billingResult.messages.map(m => m.message).join(', ');
+                throw new Error(errorMessages);
+            }
+
+            if (!billingResult.billingItem || !billingResult.billingItem.id) {
+                throw new Error('Payment processing failed');
+            }
+
+            // Success! Payment has been charged
+            onSuccess({
+                billingItemId: billingResult.billingItem.id,
+                stripeCustomerDetailId: cardStorageResult.id,
+                paymentMethodId: paymentMethod.id,
+                cardSaved: saveCard
+            });
+
+        } catch (err) {
+            console.error('Payment error:', err);
+            setError(err.message || 'Payment failed. Please try again.');
+        } finally {
+            setProcessing(false);
+        }
+    };
+
+    const cardElementOptions = {
+        style: {
+            base: {
+                fontSize: '16px',
+                color: '#424770',
+                '::placeholder': {
+                    color: '#aab7c4',
+                },
+                fontFamily: 'Roboto, sans-serif',
+            },
+            invalid: {
+                color: '#9e2146',
+            },
+        },
+    };
+
+    return (
+        <Box component="form" onSubmit={ handleSubmit }>
+            <Typography variant="h6" gutterBottom>
+                Payment Details
+            </Typography>
+
+            <Box sx={ {
+                border: '1px solid #e0e0e0',
+                borderRadius: 1,
+                p: 2,
+                mb: 2,
+                backgroundColor: '#fafafa'
+            } }>
+                <CardElement options={ cardElementOptions } />
+            </Box>
+
+            <FormControlLabel
+                control={
+                    <input
+                        type="checkbox"
+                        checked={ saveCard }
+                        onChange={ (e) => setSaveCard(e.target.checked) }
+                    />
+                }
+                label="Save card for future appointments"
+                sx={ { mb: 2 } }
+            />
+
+            { error && (
+                <Alert severity="error" sx={ { mb: 2 } }>
+                    { error }
+                </Alert>
+            ) }
+
+            <Box sx={ { display: 'flex', gap: 2, mt: 3 } }>
+                <Button
+                    variant="outlined"
+                    onClick={ onCancel }
+                    disabled={ processing }
+                    fullWidth
+                >
+                    Cancel
+                </Button>
+                <Button
+                    type="submit"
+                    variant="contained"
+                    disabled={ !stripe || processing }
+                    fullWidth
+                    sx={ { color: 'white' } }
+                >
+                    { processing ? (
+                        <>
+                            <CircularProgress size={ 20 } sx={ { mr: 1, color: 'white' } } />
+                            Processing...
+                        </>
+                    ) : (
+                        `Pay $${amount}`
+                    ) }
+                </Button>
+            </Box>
+
+            <Typography variant="caption" color="text.secondary" sx={ { display: 'block', textAlign: 'center', mt: 2 } }>
+                Your payment information is encrypted and secure
+            </Typography>
+        </Box>
+    );
+};
+
+// Main PaymentFlow Component
 const PaymentFlow = ({ bookingData, onComplete }) => {
     const [currentSubStep, setCurrentSubStep] = useState(0);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const theme = useTheme()
+    const [showCardDialog, setShowCardDialog] = useState(false);
+    const theme = useTheme();
+
     const [insuranceData, setInsuranceData] = useState({
         provider: '',
         member_id: '',
@@ -24,25 +232,45 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         lastName: '',
         email: '',
         phone: '',
-        dateOfBirth: '',
-        reason: ''
+        appointment_type_id: '',
+        contact_type: 'In Person'
     });
 
     const [insuranceResult, setInsuranceResult] = useState(null);
-
+    const [paymentMethod, setPaymentMethod] = useState('cash');
     const subStepLabels = ['Insurance Verification', 'Patient Information', 'Payment Confirmation'];
     const [insurancePlans, setInsurancePlans] = useState([]);
+    const [allClients, setAllClients] = useState([]);
+    const [appointmentType, setAppointmentType] = useState([]);
 
     useEffect(() => {
-        const fetchInsurancePlans = async () => {
-            const plans = await healthieAPI.getInsurancePlans({ is_accepted: true });
-            if (plans.data) {
-                setInsurancePlans(plans.data.insurancePlans);
-            }
-        };
         fetchInsurancePlans();
+        fetchAppointmentTypes();
+        fetchClient();
     }, []);
-    // Handle insurance verification using Healthie's system
+
+    const fetchAppointmentTypes = async () => {
+        const types = await healthieAPI.getAppointmentTypes();
+        if (types) {
+            setAppointmentType(types);
+        }
+    };
+
+    const fetchInsurancePlans = async () => {
+        const plans = await healthieAPI.getInsurancePlans({ is_accepted: true });
+        if (plans.data) {
+            setInsurancePlans(plans.data.insurancePlans);
+        }
+    };
+
+    const fetchClient = async () => {
+        const client = await healthieAPI.getClient();
+        if (client) {
+            setAllClients(client);
+        }
+    };
+
+    // Handle insurance verification
     const handleInsuranceSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
@@ -50,10 +278,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
 
         try {
             const result = await healthieAPI.verifyInsurance({
-                ID: insuranceData.provider,
-                // member_id: insuranceData.member_id,
-                // group_number: insuranceData.group_number,
-                // offering_id: bookingData.service.id
+                insurancePlanIds: [insuranceData.provider],
             });
 
             if (result.verified) {
@@ -75,31 +300,102 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         setCurrentSubStep(2);
     };
 
-    // Handle final booking with Healthie's integrated payment
-    const handleFinalBooking = async () => {
+    // Handle card payment
+    const handleCardPayment = () => {
+        setShowCardDialog(true);
+    };
+
+    // Handle successful card payment
+    const handleCardPaymentSuccess = async (paymentData) => {
+        setShowCardDialog(false);
         setLoading(true);
         setError(null);
 
         try {
-            // Create appointment with Healthie's payment integration
-            const appointmentData = {
-                providerId: bookingData.appointment.doctor.id,
-                offeringId: bookingData.service.id,
-                date: bookingData.appointment.date,
-                time: bookingData.appointment.startTime,
-                patient: patientData,
-                insurance: insuranceResult
-            };
+            // Create the appointment now that payment is confirmed
+            const getCLient = allClients.find(client => client.email === patientData.email);
+            let createClient = {};
 
-            // Healthie handles the entire payment flow internally
-            const result = await healthieAPI.createAppointmentWithPayment(appointmentData);
+            if (!getCLient) {
+                createClient = await healthieAPI.createClient({
+                    first_name: patientData.firstName,
+                    last_name: patientData.lastName,
+                    email: patientData.email,
+                    phone: patientData.phone,
+                });
+            }
 
-            if (result.appointment) {
-                // Payment was processed successfully by Healthie
+            const result = await healthieAPI.createAppointment({
+                ...patientData,
+                user_id: getCLient ? getCLient.id : createClient.id,
+                datetime: bookingData.appointment.date,
+                doctor_id: bookingData.appointment?.doctor?.id, // Add the doctor_id
+                billing_item_id: paymentData.billingItemId,
+                payment_status: 'paid'
+            });
+
+            // Optionally update the appointment with billing info
+            if (result && result.id && paymentData.billingItemId) {
+                await healthieAPI.updateAppointmentWithBilling(result.id, paymentData.billingItemId);
+            }
+
+            if (result) {
                 onComplete({
-                    appointment: result.appointment,
-                    payment: result.payment_intent,
-                    confirmation: result.appointment.confirmation_code
+                    appointment: result,
+                    payment: {
+                        method: 'card',
+                        billingItemId: paymentData.billingItemId,
+                        stripeCustomerDetailId: paymentData.stripeCustomerDetailId,
+                        paid: true
+                    },
+                    confirmation: result.confirmed
+                });
+            } else {
+                throw new Error('Failed to create appointment');
+            }
+
+        } catch (error) {
+            console.error('Booking failed:', error);
+            setError('Booking failed: ' + error.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Handle cash booking
+    const handleCashBooking = async () => {
+        setLoading(true);
+        setError(null);
+        let createClient = {};
+
+        try {
+            const getCLient = allClients.find(client => client.email === patientData.email);
+            if (!getCLient) {
+                createClient = await healthieAPI.createClient({
+                    first_name: patientData.firstName,
+                    last_name: patientData.lastName,
+                    email: patientData.email,
+                    phone: patientData.phone,
+                });
+            }
+
+            const result = await healthieAPI.createAppointment({
+                ...patientData,
+                user_id: getCLient ? getCLient.id : createClient.id,
+                datetime: bookingData.appointment.date,
+                doctor_id: bookingData.appointment?.doctor?.id, // Add the doctor_id
+                payment_method: 'cash',
+                payment_status: 'pending'
+            });
+
+            if (result) {
+                onComplete({
+                    appointment: result,
+                    payment: {
+                        method: 'cash',
+                        paid: false
+                    },
+                    confirmation: result.confirmed
                 });
             } else {
                 throw new Error('Failed to create appointment');
@@ -264,23 +560,32 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
 
                         <Grid item size={ { xs: 12, md: 4 } }>
                             <TextField
-                                label="Date of Birth"
-                                type="date"
-                                value={ patientData.dateOfBirth }
-                                onChange={ (e) => setPatientData(prev => ({ ...prev, dateOfBirth: e.target.value })) }
+                                label="Appointment Type"
+                                select
+                                value={ patientData.appointment_type_id }
+                                onChange={ (e) => setPatientData(prev => ({ ...prev, appointment_type_id: e.target.value })) }
                                 fullWidth
                                 required
-                            />
+                            >
+                                { appointmentType.map((type) => (
+                                    <MenuItem key={ type.id } value={ type.id }>
+                                        { type.name }
+                                    </MenuItem>
+                                )) }
+                            </TextField>
                         </Grid>
 
-                        <Grid item size={ { xs: 12, md: 4 } }>
-                            <TextField
-                                label="Reason for Visit (Optional)"
-                                value={ patientData.reason }
-                                onChange={ (e) => setPatientData(prev => ({ ...prev, reason: e.target.value })) }
-                                fullWidth
-                                placeholder="Please describe your symptoms or reason for consultation..."
-                            />
+                        <Grid item size={ { xs: 12 } }>
+                            <Typography variant="subtitle2" fontWeight={ 600 }>Select Contact Type</Typography>
+                            <RadioGroup
+                                value={ patientData.contact_type }
+                                sx={ { flexDirection: 'row' } }
+                                onChange={ (e) => setPatientData(prev => ({ ...prev, contact_type: e.target.value })) }
+                            >
+                                <FormControlLabel value="Healthie Video Call" control={ <Radio /> } label="Video Call" />
+                                <FormControlLabel value="Phone Call" control={ <Radio /> } label="Phone Call" />
+                                <FormControlLabel value="In Person" control={ <Radio /> } label="In-Person" />
+                            </RadioGroup>
                         </Grid>
 
                         <Grid item size={ { xs: 12, md: 4 } }>
@@ -291,7 +596,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                 fullWidth
                                 sx={ { py: 0.5, color: "white" } }
                             >
-                                Continue to Booking Confirmation
+                                Continue to Confirmation
                             </Button>
                         </Grid>
                     </Grid>
@@ -303,8 +608,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
     const renderConfirmationStep = () => {
         const totalAmount = insuranceResult
             ? insuranceResult.copay_amount
-            : bookingData.service.pricing_info?.price || 75;
-        console.log(bookingData.appointment?.date);
+            : bookingData.service?.price || 75;
 
         function formatDate(date) {
             return new Date(date).toLocaleDateString('en-US', {
@@ -313,6 +617,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                 day: 'numeric',
             });
         }
+
         return (
             <Card>
                 <CardContent sx={ { p: 4 } }>
@@ -322,6 +627,53 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                             Booking Confirmation
                         </Typography>
                     </Box>
+
+                    {/* Payment Method Selection */ }
+                    <Grid container spacing={ 2 } sx={ { mb: 4 } }>
+                        <Grid item size={ { sx: 6, md: 4.5 } }>
+                            <Typography variant="subtitle2" fontWeight={ 600 } sx={ { mb: 2 } }>
+                                Select Payment Method
+                            </Typography>
+                            <Box sx={ { display: 'flex', justifyContent: 'space-around', height: "70px" } }>
+                                <Box
+                                    sx={ {
+                                        width: '48%',
+                                        padding: '10px',
+                                        backgroundColor: paymentMethod === 'card' ? theme.palette.primary.main : '#f4f6f8',
+                                        color: paymentMethod === 'card' ? 'white' : 'text.primary',
+                                        textAlign: 'center',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        '&:hover': {
+                                            backgroundColor: paymentMethod !== 'card' && '#e0e0e0',
+                                        },
+                                    } }
+                                    onClick={ () => setPaymentMethod('card') }
+                                >
+                                    <Typography variant="h6" sx={ { fontSize: "15px" } }>Card</Typography>
+                                    <Typography variant="body2" sx={ { fontSize: "10px" } }>Pay securely with your card</Typography>
+                                </Box>
+                                <Box
+                                    sx={ {
+                                        width: '48%',
+                                        padding: '10px',
+                                        backgroundColor: paymentMethod === 'cash' ? theme.palette.primary.main : '#f4f6f8',
+                                        color: paymentMethod === 'cash' ? 'white' : 'text.primary',
+                                        textAlign: 'center',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        '&:hover': {
+                                            backgroundColor: paymentMethod !== 'cash' && '#e0e0e0',
+                                        },
+                                    } }
+                                    onClick={ () => setPaymentMethod('cash') }
+                                >
+                                    <Typography variant="h6" sx={ { fontSize: "15px" } }>Cash</Typography>
+                                    <Typography variant="body2" sx={ { fontSize: "10px" } }>Pay in cash at the appointment.</Typography>
+                                </Box>
+                            </Box>
+                        </Grid>
+                    </Grid>
 
                     {/* Booking Summary */ }
                     <Box sx={ { mb: 4, p: 3, bgcolor: '#f8fafc', borderRadius: 2 } }>
@@ -335,7 +687,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                         <Box sx={ { display: 'flex', justifyContent: 'space-between', mb: 1 } }>
                             <Typography variant="body2">Doctor:</Typography>
                             <Typography variant="body2">
-                                { bookingData.appointment?.doctor.first_name } { bookingData.appointment?.doctor.last_name }
+                                { bookingData.appointment?.doctor.full_name }
                             </Typography>
                         </Box>
                         <Box sx={ { display: 'flex', justifyContent: 'space-between', mb: 1 } }>
@@ -363,16 +715,12 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                         </Alert>
                     ) }
 
-                    <Alert severity="info" sx={ { mb: 3 } }>
-                        Healthie will securely process your payment using Stripe. You'll be redirected to complete the payment process.
-                    </Alert>
-
                     <Button
                         variant="contained"
                         size="large"
                         disabled={ loading }
                         fullWidth
-                        onClick={ handleFinalBooking }
+                        onClick={ paymentMethod === "card" ? handleCardPayment : handleCashBooking }
                         sx={ { py: 1.5, color: "#fff" } }
                     >
                         { loading ? (
@@ -381,7 +729,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                 Creating Appointment...
                             </>
                         ) : (
-                            `Confirm Booking & Pay $${totalAmount}`
+                            `Confirm Booking ${paymentMethod === 'cash' ? '(Pay Later)' : `& Pay $${totalAmount}`}`
                         ) }
                     </Button>
 
@@ -393,22 +741,26 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         );
     };
 
+    // Calculate total amount for payment
+    const totalAmount = insuranceResult
+        ? insuranceResult.copay_amount
+        : bookingData.service?.price || 75;
+
     return (
         <Box>
             <Typography variant="h5" fontWeight={ 600 } color="text.primary" gutterBottom>
-                Step 4: Payment & Information
+                Payment & Information
             </Typography>
 
             {/* Sub-step indicator */ }
             <Box sx={ { mb: 4 } }>
                 <Stepper activeStep={ currentSubStep } alternativeLabel sx={ {
                     '& .css-1gi9ihl-MuiStepIcon-text': {
-                        fill: 'white', // change active color here
+                        fill: 'white',
                     },
-
-                } } >
+                } }>
                     { subStepLabels.map((label) => (
-                        <Step key={ label } >
+                        <Step key={ label }>
                             <StepLabel>{ label }</StepLabel>
                         </Step>
                     )) }
@@ -419,6 +771,32 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
             { currentSubStep === 0 && renderInsuranceStep() }
             { currentSubStep === 1 && renderPatientStep() }
             { currentSubStep === 2 && renderConfirmationStep() }
+
+            {/* Card Payment Dialog */ }
+            <Dialog
+                open={ showCardDialog }
+                onClose={ () => setShowCardDialog(false) }
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle>
+                    <Box sx={ { display: 'flex', alignItems: 'center' } }>
+                        <CreditCard sx={ { mr: 1 } } />
+                        Secure Payment
+                    </Box>
+                </DialogTitle>
+                <DialogContent>
+                    <Elements stripe={ stripePromise }>
+                        <CardPaymentForm
+                            amount={ totalAmount }
+                            patientData={ patientData }
+                            bookingData={ bookingData }
+                            onSuccess={ handleCardPaymentSuccess }
+                            onCancel={ () => setShowCardDialog(false) }
+                        />
+                    </Elements>
+                </DialogContent>
+            </Dialog>
         </Box>
     );
 };

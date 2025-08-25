@@ -19,7 +19,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
     const [loading, setLoading] = useState(true);
     const [slotsLoading, setSlotsLoading] = useState(false);
     const theme = useTheme();
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date();
     const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     useEffect(() => {
@@ -208,24 +208,19 @@ const DoctorSelector = ({ location, service, onNext }) => {
                                 onChange={ (newValue) => setSelectedDate(newValue) }
                                 minDate={ today }
                                 maxDate={ nextWeek }
-                                renderInput={ (params) => (
-                                    <TextField
-                                        { ...params }
-                                        fullWidth
-                                        sx={ {
-                                            maxWidth: 300,
-                                            '& .MuiOutlinedInput-root': {
-                                                borderRadius: '6px',
+                                slotProps={ {
+                                    textField: {
+                                        variant: 'outlined', sx: {
+                                            fill: theme.palette.primary.main,
+                                            '& .MuiInputLabel-root.Mui-error': {
+                                                color: theme.palette.primary.main, // or any other color you want
                                             },
-                                            '& .MuiInputLabel-root': {
-                                                fontSize: '0.875rem',
+                                            '.css-8k08lt-MuiPickersInputBase-root-MuiPickersOutlinedInput-root.Mui-error .MuiPickersOutlinedInput-notchedOutline': {
+                                                borderColor: theme.palette.primary.main, // or any other color you want
                                             },
-                                            '& .MuiInputBase-input': {
-                                                fontSize: '0.875rem',
-                                            },
-                                        } }
-                                    />
-                                ) }
+                                        }
+                                    }
+                                } }
                             />
                         </LocalizationProvider>
                     </Box>
@@ -248,7 +243,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
                             ) : (
                                 <Grid container spacing={ 1 } sx={ { mb: 4 } }>
                                     { timeSlots.filter(slot => slot.available).map((slot, index) => (
-                                        <Grid item xs={ 6 } sm={ 4 } md={ 3 } key={ index }>
+                                        <Grid item size={ { xs: 6, sm: 4, md: 2 } } key={ index }>
                                             <Button
                                                 variant={ selectedSlot?.id === slot.id ? "contained" : "outlined" }
                                                 fullWidth

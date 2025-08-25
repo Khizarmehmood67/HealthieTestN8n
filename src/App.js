@@ -46,6 +46,7 @@ function App() {
   const updateBookingData = (key, value) => {
     setBookingData(prev => ({ ...prev, [key]: value }));
   };
+  console.log("Ready to payment data", bookingData);
 
   const nextStep = () => {
     const stepOrder = Object.values(STEPS);

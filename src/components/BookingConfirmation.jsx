@@ -1,17 +1,17 @@
-import React from 'react';
+import React, { use } from 'react';
 import {
     Box, Typography, Card, CardContent, Button, Divider,
-    List, ListItem, ListItemIcon, ListItemText, Alert
+    List, ListItem, ListItemIcon, ListItemText, Alert, Chip
 } from '@mui/material';
 import {
     CheckCircle, Email, VideoCall, Event, Person, LocationOn, AttachMoney
 } from '@mui/icons-material';
-
+import { useTheme } from '@mui/material/styles';
 const BookingConfirmation = ({ bookingData }) => {
     const handleNewBooking = () => {
         window.location.reload();
     };
-
+    const theme = useTheme();
     return (
         <Box sx={ { maxWidth: 600, mx: 'auto', py: 4 } }>
             <Box sx={ { textAlign: 'center', mb: 4 } }>
@@ -22,11 +22,11 @@ const BookingConfirmation = ({ bookingData }) => {
                 <Typography variant="body1" color="#5f6368">
                     Your appointment has been successfully scheduled
                 </Typography>
-                { bookingData.payment?.confirmation && (
+                {/* { bookingData.payment && (
                     <Typography variant="h6" color="#4285f4" sx={ { mt: 2 } }>
                         Confirmation: { bookingData.payment.confirmation }
                     </Typography>
-                ) }
+                ) } */}
             </Box>
 
             <Card sx={ { mb: 4, borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' } }>
@@ -42,7 +42,7 @@ const BookingConfirmation = ({ bookingData }) => {
                             <Box>
                                 <Typography variant="body2" color="#5f6368">Doctor</Typography>
                                 <Typography variant="body1" fontWeight={ 500 }>
-                                    { bookingData.appointment?.doctor.first_name } { bookingData.appointment?.doctor.last_name }
+                                    { bookingData.appointment?.doctor.full_name }
                                 </Typography>
                             </Box>
                         </Box>
@@ -71,9 +71,12 @@ const BookingConfirmation = ({ bookingData }) => {
                             <AttachMoney sx={ { mr: 2, color: '#5f6368' } } />
                             <Box>
                                 <Typography variant="body2" color="#5f6368">Amount Paid</Typography>
-                                <Typography variant="body1" fontWeight={ 500 }>
-                                    ${ bookingData.payment?.amount || bookingData.service?.pricing_info?.price }
-                                </Typography>
+                                <Box sx={ { display: 'flex', alignItems: 'center', justifyContent: "space-around" } }>
+                                    <Typography variant="body1" fontWeight={ 500 }>
+                                        ${ bookingData.payment?.amount || bookingData.service?.price }
+                                    </Typography>
+                                    <Chip label="Pending" sx={ { ml: 7, color: "#fff" } } color="primary" />
+                                </Box>
                             </Box>
                         </Box>
                     </Box>
@@ -88,7 +91,7 @@ const BookingConfirmation = ({ bookingData }) => {
                     <List>
                         <ListItem>
                             <ListItemIcon>
-                                <Email sx={ { color: '#4285f4' } } />
+                                <Email sx={ { color: theme.palette.primary.main } } />
                             </ListItemIcon>
                             <ListItemText
                                 primary="Check your email for confirmation details"
@@ -97,11 +100,11 @@ const BookingConfirmation = ({ bookingData }) => {
                         </ListItem>
                         <ListItem>
                             <ListItemIcon>
-                                <VideoCall sx={ { color: '#4285f4' } } />
+                                <VideoCall sx={ { color: theme.palette.primary.main } } />
                             </ListItemIcon>
                             <ListItemText
                                 primary="Join the video call 15 minutes early"
-                                secondary="You'll receive a secure video call link before your appointment"
+                                secondary="You'll receive a secure video call link before your appointment if you select a Vedio Call option"
                             />
                         </ListItem>
                     </List>
@@ -118,7 +121,7 @@ const BookingConfirmation = ({ bookingData }) => {
                     size="large"
                     onClick={ handleNewBooking }
                     sx={ {
-                        backgroundColor: '#4285f4',
+                        backgroundColor: theme.palette.primary.main,
                         color: 'white',
                         textTransform: 'none',
                         fontWeight: 500,
@@ -127,7 +130,7 @@ const BookingConfirmation = ({ bookingData }) => {
                         borderRadius: '6px',
                         boxShadow: 'none',
                         '&:hover': {
-                            backgroundColor: '#3367d6',
+                            backgroundColor: theme.palette.primary.main,
                             boxShadow: 'none',
                         }
                     } }

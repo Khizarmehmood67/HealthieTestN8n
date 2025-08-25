@@ -608,7 +608,7 @@ const PaymentFlow = ({ onNext }) => {
     return (
         <Box>
             <Typography variant="h5" fontWeight={ 600 } color="text.primary" gutterBottom>
-                Step 4: Patient Details & Payment
+                Patient Details & Payment
             </Typography>
 
             {/* Sub-step indicator */ }
