@@ -3,6 +3,8 @@ class HealthieAPI {
     this.baseURL = 'https://staging-api.gethealthie.com/graphql';
     this.apiKey = 'gh_sbox_v9VbN8qKZrogpy4lN9IK8nFhASH5gJcfBsGFCzhubzv0O1M8dUslz2d2lm9oxWn1';
   }
+  // gh_live_xdD0KLeNnMF1OnaApr9CHUp11bYUUKJxnXQZ5F5xK8IaLOn8rzoQ61oEAQVi47hD	   client key
+
 
   async graphqlRequest(query, variables = {}) {
     try {
@@ -369,6 +371,8 @@ query  {
 
   // Verify insurance through Healthie
   async verifyInsurance({ insurancePlanIds }) {
+    console.log("insurancePlanIds", insurancePlanIds);
+
     const mutation = `
     mutation createAcceptedInsurancePlan($insurance_plan_ids: [ID]) {
       createAcceptedInsurancePlan(input: { insurance_plan_ids: $insurance_plan_ids }) {
@@ -400,49 +404,7 @@ query  {
       throw error;
     }
   }
-  // Add this method inside your HealthieAPI class
-  async createPaymentIntent(paymentData) {
-    const mutation = `
-    mutation CreatePaymentIntent($input: createPaymentIntentInput!) {
-      createPaymentIntent(input: $input) {
 
-        messages {
-          field
-          message
-        }
-      }
-    }
-  `;
-
-    const input = {
-      amount_to_pay: paymentData.amount_to_pay,
-      currency: paymentData.currency,
-      email: paymentData.email,
-      first_name: paymentData.first_name,
-      last_name: paymentData.last_name,
-      legal_name: paymentData.legal_name || paymentData.first_name,
-      offering_id: paymentData.offering_id,
-      recipient_id: paymentData.recipient_id,
-      payment_method_types: paymentData.payment_method_types,
-      phone_number: paymentData.phone_number || null,
-      timezone: paymentData.timezone || null,
-      stripe_idempotency_key: paymentData.stripe_idempotency_key || crypto.randomUUID(),
-      coupon_code: paymentData.coupon_code || null,
-    };
-
-    try {
-      const response = await this.graphqlRequest(mutation, { input });
-
-      if (response.data.createPaymentIntent.messages?.length > 0) {
-        throw new Error(response.data.createPaymentIntent.messages.map(msg => msg.message).join(', '));
-      }
-
-      return response.data.createPaymentIntent;
-    } catch (error) {
-      console.error('Failed to create payment intent:', error);
-      throw error;
-    }
-  }
 
   async getInsurancePlans({
     is_accepted = true,
@@ -602,23 +564,16 @@ query  {
     }
   }
 
-  // 2. Store card in Healthie (creates Stripe customer detail)
-  async storeCard(data) {
+
+  async storeCard(input) {
     const mutation = `
     mutation createStripeCustomerDetail($input: createStripeCustomerDetailInput) {
       createStripeCustomerDetail(input: $input) {
-        messages
+        stripe_customer_detail { id }
+        messages { field message }
         stripeError
-        stripe_customer_detail
       }
-    }
-  `;
-
-    const input = {
-      user_id: data.client_id,
-      stripe_payment_method_id: data.stripe_payment_method_id,
-      is_default: data.is_default || false
-    };
+    }`;
 
     try {
       const response = await this.graphqlRequest(mutation, { input });
@@ -717,15 +672,17 @@ query  {
   }
 
   // 4. Create billing item (charge the patient)
+  // Fixed createBillingItem method in healthieAPI.js
+  // Fixed createBillingItem method in healthieAPI.js
   async createBillingItem(data) {
     const mutation = `
     mutation CreateBillingItem(
       $amount_paid: String!
       $sender_id: ID!
-      $requested_payment_id: ID
-      $stripe_idempotency_key: String!
       $stripe_customer_detail_id: ID!
+      $stripe_idempotency_key: ID  # Changed from String! to ID
       $should_charge: Boolean!
+      $requested_payment_id: ID
     ) {
       createBillingItem(
         input: {
@@ -742,8 +699,7 @@ query  {
           amount_paid
           created_at
           stripe_charge_id
-          stripe_transaction_fee_amount
-          status
+          state
         }
         messages {
           field
@@ -756,10 +712,10 @@ query  {
     const variables = {
       amount_paid: data.amount_paid,
       sender_id: data.sender_id,
-      requested_payment_id: data.requested_payment_id || null,
-      stripe_idempotency_key: data.stripe_idempotency_key,
       stripe_customer_detail_id: data.stripe_customer_detail_id,
-      should_charge: data.should_charge !== false // default to true
+      stripe_idempotency_key: data.stripe_idempotency_key || crypto.randomUUID(),
+      should_charge: data.should_charge !== false,
+      requested_payment_id: data.requested_payment_id || null
     };
 
     try {
@@ -770,11 +726,7 @@ query  {
         throw new Error(errors.map(err => err.message).join(', '));
       }
 
-      if (!response.data?.createBillingItem?.billingItem) {
-        throw new Error('Failed to create billing item');
-      }
-
-      return response.data.createBillingItem;
+      return response.data?.createBillingItem?.billingItem;
     } catch (error) {
       console.error('Failed to create billing item:', error);
       throw error;
@@ -871,8 +823,943 @@ query  {
       return v.toString(16);
     });
   }
+  // healthieAPI.js
+
+  // Fixed getAvailabilities method for HealthieAPI class
+
+  // Corrected HealthieAPI methods with proper GraphQL types
+
+  async getAvailabilities(locationId, appointmentTypeId, startDate, endDate, providerId = null, organizationId = '96198', additionalLocationIds = null) {
+    const query = `query calendarData(
+            $appointmentLocationId: ID, 
+            $appointmentTypeId: ID, 
+            $appointment_setting_updated_at: ISO8601DateTime, 
+            $availabilityAppointmentTypeIds: [ID], 
+            $colorCodeId: String, 
+            $contactTypeId: ID, 
+            $endDate: String, 
+            $filter_by_appointment_location_ids: [ID], 
+            $filter_by_appointment_statuses: [String], 
+            $filter_by_appointment_type_ids: [ID], 
+            $filter_by_client_confirmed: Boolean, 
+            $filter_by_contact_types: String, 
+            $filter_by_provider_confirmed: Boolean, 
+            $filter_synced_appointments: Boolean, 
+            $includeRepeating: Boolean, 
+            $include_nil_blockers: Boolean, 
+            $is_locations_resource: Boolean!, 
+            $is_org: Boolean, 
+            $is_repeating: Boolean, 
+            $known_requires_client_confirmed: Boolean, 
+            $locationIds: [ID], 
+            $one_time: Boolean, 
+            $provider_id: ID, 
+            $provider_ids: [ID], 
+            $show_appointments: Boolean, 
+            $show_availabilities: Boolean!, 
+            $show_availability: Boolean, 
+            $startDate: String, 
+            $tag_ids: [ID], 
+            $insurance_plan_ids: [ID], 
+            $timezone: String, 
+            $state_license: String, 
+            $organization_id: ID, 
+            $use_provider_inclusions: Boolean
+        ) {
+            availabilities(
+                appointment_location_id: $appointmentLocationId
+                appointment_type_id: $appointmentTypeId
+                appointment_type_ids: $availabilityAppointmentTypeIds
+                contact_type_id: $contactTypeId
+                endDate: $endDate
+                includeRepeating: $includeRepeating
+                is_org: $is_org
+                is_repeating: $is_repeating
+                one_time: $one_time
+                provider_id: $provider_id
+                provider_ids: $provider_ids
+                show_availability: $show_availability
+                include_suborganizations: false
+                startDate: $startDate
+                timezone: $timezone
+                state_license: $state_license
+                tag_ids: $tag_ids
+                insurance_plan_ids: $insurance_plan_ids
+                organization_id: $organization_id
+            ) @include(if: $show_availabilities) {
+                appointment_location_id
+                appointment_type_id
+                contact_type_id
+                day_of_week
+                end_on
+                id
+                is_repeating
+                origin_start_date
+                range_end
+                range_start
+                repeating_availability_id
+                resourceId
+                timezone_abbr
+                user_id
+            }
+            
+            appointments(
+                colorSchemeId: $colorCodeId
+                endDate: $endDate
+                filter_by_appointment_location_ids: $filter_by_appointment_location_ids
+                filter_by_appointment_statuses: $filter_by_appointment_statuses
+                filter_by_appointment_type_ids: $filter_by_appointment_type_ids
+                filter_by_client_confirmed: $filter_by_client_confirmed
+                filter_by_contact_types: $filter_by_contact_types
+                filter_by_provider_confirmed: $filter_by_provider_confirmed
+                filter_synced_appointments: $filter_synced_appointments
+                include_nil_blockers: $include_nil_blockers
+                is_org: $is_org
+                provider_id: $provider_id
+                provider_ids: $provider_ids
+                show_appointments: $show_appointments
+                startDate: $startDate
+                state_license: $state_license
+                tag_ids: $tag_ids
+                insurance_plan_ids: $insurance_plan_ids
+                organization_id: $organization_id
+                use_provider_inclusions: $use_provider_inclusions
+            ) {
+                appointment_category
+                appointment_type_id
+                backgroundColor(appointment_setting_updated_at: $appointment_setting_updated_at)
+                client_confirmed(known_requires_client_confirmed: $known_requires_client_confirmed)
+                confirmed
+                contact_type
+                default_color
+                end
+                external_id_type
+                id
+                is_blocker
+                locationResource @include(if: $is_locations_resource)
+                pm_status
+                provider {
+                    full_name
+                    id
+                }
+                providers(empty_unless_multiple: true) {
+                    full_name
+                    id
+                }
+                recurring_appointment {
+                    id
+                }
+                resourceId
+                start
+                timezone_abbr
+                title
+            }
+            
+            locationResources: locationResources(location_ids: $locationIds) {
+                resourceId
+                resourceTitle
+            }
+        }
+    `;
+
+    // Prepare location IDs array (NOT a string)
+    let locationIdsArray = [];
+    if (locationId) {
+      locationIdsArray.push(locationId.toString());
+    }
+    if (additionalLocationIds && Array.isArray(additionalLocationIds)) {
+      locationIdsArray = locationIdsArray.concat(additionalLocationIds.map(id => id.toString()));
+    }
+
+    const variables = {
+      // Date parameters
+      startDate: startDate,
+      endDate: endDate,
+
+      // Location and appointment type - ID types
+      appointmentLocationId: locationId?.toString() || null,
+      appointmentTypeId: appointmentTypeId?.toString() || null,
+      availabilityAppointmentTypeIds: appointmentTypeId ? [appointmentTypeId.toString()] : [],
+
+      // Contact type - ID type
+      contactTypeId: null,
+
+      // Provider IDs
+      provider_id: providerId?.toString() || null,
+      provider_ids: providerId ? [providerId.toString()] : null,
+
+      // Organization settings
+      organization_id: '96198' || null,
+      is_org: true,
+
+      // Show flags
+      show_availabilities: true,
+      show_availability: true,
+      show_appointments: true,
+
+      // Repeating settings
+      includeRepeating: true,
+      is_repeating: true,
+      one_time: true,
+
+      // Location resources - Array of IDs
+      locationIds: locationIdsArray.length > 0 ? locationIdsArray : null,
+      is_locations_resource: false,
+
+      // Additional settings
+      timezone: "Asia/Yekaterinburg",
+      known_requires_client_confirmed: false,
+      appointment_setting_updated_at: "2025-08-25T15:45:51-06:00", // ISO8601 format
+      include_nil_blockers: true,
+      state_license: "none_selected",
+
+      // Filter settings
+      filter_by_appointment_location_ids: locationId ? [locationId.toString()] : [],
+      filter_by_appointment_statuses: [],
+      filter_by_appointment_type_ids: [],
+      filter_by_contact_types: null,
+      filter_synced_appointments: false,
+      filter_by_provider_confirmed: null,
+      filter_by_client_confirmed: null,
+      use_provider_inclusions: true,
+
+      // Optional fields
+      colorCodeId: null,
+      tag_ids: [],
+      insurance_plan_ids: []
+    };
+
+    try {
+      const result = await this.graphqlRequest(query, variables);
+      console.log('Calendar data received:', {
+        availabilities: result.data?.availabilities?.length || 0,
+        appointments: result.data?.appointments?.length || 0
+      });
+      return result.data;
+    } catch (error) {
+      console.error('Error in getAvailabilities:', error);
+      throw error;
+    }
+  }
+
+  // CORRECTED getProviders method - using 'provider' (singular) not 'providers'
+  async getProviders(locationId, serviceId) {
+    // First, try to get multiple providers using users query
+    const query = `
+        query getUsers(
+            $keywords: String,
+            $location_id: ID,
+            $appointment_type_id: ID,
+            $page_size: Int,
+            $offset: Int
+        ) {
+            users(
+                keywords: $keywords,
+                location_id: $location_id,
+                appointment_type_id: $appointment_type_id,
+                page_size: $page_size,
+                offset: $offset,
+                include_suborganizations: false
+            ) {
+                id
+                full_name
+                first_name
+                last_name
+                email
+                phone_number
+                speciality
+                years_of_experience
+                rating
+                bio
+                avatar_url
+                is_provider
+                active
+            }
+        }
+    `;
+
+    const variables = {
+      location_id: locationId?.toString() || null,
+      appointment_type_id: serviceId?.toString() || null,
+      keywords: null,
+      page_size: 50,
+      offset: 0
+    };
+
+    try {
+      const result = await this.graphqlRequest(query, variables);
+      // Filter to only return providers
+      const providers = (result.data?.users || []).filter(user =>
+        user.is_provider !== false && user.active !== false
+      );
+
+      console.log(`Found ${providers.length} providers for location ${locationId} and service ${serviceId}`);
+      return providers;
+    } catch (error) {
+      console.error('Failed to fetch providers:', error);
+
+      // Fallback: try alternate query structure if available
+      try {
+        const alternateQuery = `
+                query getReferringPhysicians {
+                    referringPhysicians {
+                        id
+                        full_name
+                        speciality
+                        location_id
+                        accepts_insurance
+                        phone_number
+                    }
+                }
+            `;
+
+        const alternateResult = await this.graphqlRequest(alternateQuery);
+        const physicians = alternateResult.data?.referringPhysicians || [];
+
+        // Filter by location if provided
+        if (locationId) {
+          return physicians.filter(p =>
+            !p.location_id || p.location_id === locationId.toString()
+          );
+        }
+
+        return physicians;
+      } catch (alternateError) {
+        console.error('Alternate provider fetch also failed:', alternateError);
+        return [];
+      }
+    }
+  }
+
+  // Alternative: Get a single provider by ID
+  async getProvider(providerId) {
+    const query = `
+        query getProvider($id: ID!) {
+            provider(id: $id) {
+                id
+                full_name
+                first_name
+                last_name
+                email
+                phone_number
+                speciality
+                years_of_experience
+                rating
+                bio
+                avatar_url
+                active
+            }
+        }
+    `;
+
+    const variables = {
+      id: providerId.toString()
+    };
+
+    try {
+      const result = await this.graphqlRequest(query, variables);
+      return result.data?.provider || null;
+    } catch (error) {
+      console.error('Failed to fetch provider:', error);
+      return null;
+    }
+  }
+  // Helper method to process the calendar data
+  processCalendarData(data) {
+    const { availabilities = [], appointments = [] } = data;
+    const processedSlots = [];
+
+    // Group appointments by provider for efficient lookup
+    const appointmentsByProvider = {};
+    appointments.forEach(apt => {
+      const providerId = apt.provider?.id;
+      if (providerId) {
+        if (!appointmentsByProvider[providerId]) {
+          appointmentsByProvider[providerId] = [];
+        }
+        appointmentsByProvider[providerId].push(apt);
+      }
+    });
+
+    // Process each availability range
+    availabilities.forEach(availability => {
+      const providerId = availability.user_id;
+      const providerAppointments = appointmentsByProvider[providerId] || [];
+
+      // Generate time slots from this availability
+      const slots = this.generateTimeSlots(
+        availability,
+        providerAppointments
+      );
+
+      processedSlots.push(...slots);
+    });
+
+    return processedSlots;
+  }
+
+  // Helper to generate time slots from an availability range
+  generateTimeSlots(availability, appointments, slotDuration = 15) {
+    const slots = [];
+    const start = new Date(availability.range_start);
+    const end = new Date(availability.range_end);
+
+    let current = new Date(start);
+
+    while (current < end) {
+      const slotEnd = new Date(current);
+      slotEnd.setMinutes(slotEnd.getMinutes() + slotDuration);
+
+      // Check if this slot overlaps with any appointment
+      const isBooked = appointments.some(apt => {
+        if (!apt.start || !apt.end) return false;
+
+        const aptStart = new Date(apt.start);
+        const aptEnd = new Date(apt.end);
+
+        // Check for overlap
+        return (
+          (current >= aptStart && current < aptEnd) ||
+          (slotEnd > aptStart && slotEnd <= aptEnd) ||
+          (current <= aptStart && slotEnd >= aptEnd)
+        );
+      });
+
+      // Check if appointment is a blocker
+      const isBlocked = appointments.some(apt => {
+        if (!apt.is_blocker || !apt.start || !apt.end) return false;
+
+        const aptStart = new Date(apt.start);
+        const aptEnd = new Date(apt.end);
+
+        return current >= aptStart && current < aptEnd;
+      });
+
+      if (!isBooked && !isBlocked) {
+        slots.push({
+          id: `${availability.id}-${current.toISOString()}`,
+          start: new Date(current),
+          end: new Date(slotEnd),
+          availabilityId: availability.id,
+          providerId: availability.user_id,
+          locationId: availability.appointment_location_id,
+          appointmentTypeId: availability.appointment_type_id
+        });
+      }
+
+      current = slotEnd;
+    }
+
+    return slots;
+  }
+
+  // Helper method to parse the timezone from the response
+  parseTimezoneFromAbbr(timezoneAbbr) {
+    const timezoneMap = {
+      'GMT+05:00': 'Asia/Yekaterinburg',
+      'EST': 'America/New_York',
+      'CST': 'America/Chicago',
+      'MST': 'America/Denver',
+      'PST': 'America/Los_Angeles',
+      // Add more mappings as needed
+    };
+    return timezoneMap[timezoneAbbr] || 'UTC';
+  }
+
+
+
+  async getAcceptedInsurancePlans() {
+    const query = `
+            query insurancePlans($is_accepted: Boolean) {
+                insurancePlans(is_accepted: $is_accepted, sort_by: "payer_name_asc") {
+                    id
+                    name_and_id
+                    payer_id
+                    payer_name
+                    is_accepted
+                }
+            }
+        `;
+
+    const response = await this.graphqlRequest(query, { is_accepted: true });
+    return response?.data?.insurancePlans || [];
+  }
+
+  /**
+   * Get all insurance plans with filters
+   */
+  // async getInsurancePlans(params = {}) {
+  //   const query = `
+  //           query insurancePlans($ids: String, $keywords: String, $is_accepted: Boolean, $sort_by: String) {
+  //               insurancePlans(ids: $ids, keywords: $keywords, is_accepted: $is_accepted, sort_by: $sort_by) {
+  //                   id
+  //                   name_and_id
+  //                   payer_id
+  //                   payer_name
+  //                   is_accepted
+  //               }
+  //           }
+  //       `;
+
+  //   return await this.request(query, params);
+  // }
+
+  /**
+   * Verify insurance eligibility (mock - replace with actual verification API)
+   */
+  // async verifyInsurance(params) {
+  //   // Note: Healthie doesn't have a direct insurance verification API
+  //   // You might need to integrate with a third-party service like Eligible or ChangeHealthcare
+  //   // This is a mock implementation
+
+  //   try {
+  //     // For now, we'll just check if the plan exists
+  //     const plans = await this.getInsurancePlans({ ids: params.insurance_plan_id });
+
+  //     if (plans?.data?.insurancePlans?.length > 0) {
+  //       return {
+  //         verified: true,
+  //         copay_amount: 25, // Default copay
+  //         coverage_amount: 125, // Default coverage
+  //         deductible_met: false,
+  //         deductible_remaining: 500
+  //       };
+  //     }
+
+  //     return { verified: false };
+  //   } catch (error) {
+  //     console.error('Insurance verification error:', error);
+  //     return { verified: false };
+  //   }
+  // }
+
+  // =============== SUPERBILLS ===============
+
+  /**
+   * Create a superbill
+   */
+  async createSuperbill(superbillData) {
+    const mutation = `
+            mutation createSuperBill(
+                $patient_id: ID,
+                $patient_dob: String,
+                $dietitian_id: ID,
+                $provider_name: String,
+                $service_date: String,
+                $amount_paid: String,
+                $status: String,
+                $icd_codes_super_bills: [IcdCodesSuperBillInput],
+                $cpt_codes_super_bills: [CptCodesSuperBillInput],
+                $receipt_line_items: [ReceiptLineItemInput]
+            ) {
+                createSuperBill(input: {
+                    patient_id: $patient_id,
+                    patient_dob: $patient_dob,
+                    dietitian_id: $dietitian_id,
+                    provider_name: $provider_name,
+                    service_date: $service_date,
+                    amount_paid: $amount_paid,
+                    status: $status,
+                    icd_codes_super_bills: $icd_codes_super_bills,
+                    cpt_codes_super_bills: $cpt_codes_super_bills,
+                    receipt_line_items: $receipt_line_items
+                }) {
+                    superBill {
+                        id
+                      provider_name
+                      patient_name
+                      amount_paid
+                        status
+                        total_fee
+                        balance_due
+                    }
+                    messages {
+                        field
+                        message
+                    }
+                }
+            }
+        `;
+
+    return await this.graphqlRequest(mutation, superbillData);
+  }
+
+  /**
+   * Update a superbill (to send to patient)
+   */
+  async updateSuperbill(superbillId, updateData) {
+    const mutation = `
+            mutation updateSuperBill(
+                $id: ID,
+                $status: String,
+                $should_email_to_client: Boolean
+            ) {
+                updateSuperBill(input: {
+                    id: $id,
+                    status: $status,
+                    should_email_to_client: $should_email_to_client
+                }) {
+                    superBill {
+                        id
+                        name
+                        status
+                    }
+                    messages {
+                        field
+                        message
+                    }
+                }
+            }
+        `;
+
+    return await this.graphqlRequest(mutation, { id: superbillId, ...updateData });
+  }
+
+  /**
+   * Get superbill details
+   */
+  async getSuperbill(superbillId) {
+    const query = `
+            query superBill($id: ID) {
+                superBill(id: $id) {
+                    id
+                    name
+                    amount_paid
+                    balance_due
+                    total_fee
+                    status
+                    service_date
+                    patient {
+                        id
+                        first_name
+                        last_name
+                        email
+                        dob
+                    }
+                    provider {
+                        id
+                        first_name
+                        last_name
+                        npi
+                    }
+                    icd_codes_super_bills {
+                        id
+                        code
+                        description
+                    }
+                    cpt_codes_super_bills {
+                        id
+                        code
+                        description
+                        units
+                        fee
+                    }
+                }
+            }
+        `;
+
+    return await this.graphqlRequest(query, { id: superbillId });
+  }
+
+  // =============== CMS1500 CLAIMS ===============
+
+  /**
+   * Create a CMS1500 insurance claim
+   */
+  async createCMS1500(cms1500Data) {
+    const mutation = `
+        mutation createCms1500(
+            $patient: PatientInput
+            $dietitian: DietitianInput
+            $service_location_id: ID  # Changed from String to ID
+            $amount_paid: String
+            $cms1500_policies: [Cms1500PolicyInput!]
+            $icd_codes_cms1500s: [IcdCodesCms1500Input!]
+            $cpt_codes_cms1500s: [CptCodesCms1500Input!]
+            $client_sig_on_file: Boolean
+        ) {
+            createCms1500(
+                input: {
+                    patient: $patient
+                    dietitian: $dietitian
+                    service_location_id: $service_location_id
+                    amount_paid: $amount_paid
+                    cms1500_policies: $cms1500_policies
+                    icd_codes_cms1500s: $icd_codes_cms1500s
+                    cpt_codes_cms1500s: $cpt_codes_cms1500s
+                    client_sig_on_file: $client_sig_on_file
+                }
+            ) {
+                cms1500 {
+                    id
+                    amount_paid
+                    patient {
+                        id
+                        name
+                    }
+                    status
+                }
+                messages {
+                    field
+                    message
+                }
+            }
+        }
+    `;
+
+    return await this.graphqlRequest(mutation, cms1500Data);
+  }
+
+  /**
+   * Update CMS1500 claim status
+   */
+  async updateCMS1500(cms1500Id, updateData) {
+    const mutation = `
+            mutation updateCms1500(
+                $id: ID
+                $status: String
+                $amount_paid: String
+            ) {
+                updateCms1500(
+                    input: {
+                        id: $id
+                        status: $status
+                        amount_paid: $amount_paid
+                    }
+                ) {
+                    cms1500 {
+                        id
+                        name
+                        status
+                    }
+                    messages {
+                        field
+                        message
+                    }
+                }
+            }
+        `;
+
+    return await this.graphqlRequest(mutation, { id: cms1500Id, ...updateData });
+  }
+
+  /**
+   * Get CMS1500 claim details
+   */
+  async getCMS1500(cms1500Id) {
+    const query = `
+            query cms1500($id: ID) {
+                cms1500(id: $id) {
+                    id
+                    name
+                    status
+                    amount_paid
+                    amount_reimbursed
+                    service_date
+                    patient {
+                        id
+                        first_name
+                        last_name
+                        dob
+                        email
+                        phone_number
+                    }
+                    provider {
+                        id
+                        first_name
+                        last_name
+                        npi
+                    }
+                    icd_codes_cms1500s {
+                        id
+                        code
+                        description
+                    }
+                    cpt_codes_cms1500s {
+                        id
+                        code
+                        description
+                        units
+                        fee
+                        modifier_1
+                        modifier_2
+                    }
+                }
+            }
+        `;
+
+    return await this.graphqlRequest(query, { id: cms1500Id });
+  }
+
+  /**
+   * List CMS1500 claims
+   */
+  async listCMS1500s(params = {}) {
+    const query = `
+            query cms1500s($keywords: String, $sort_by: String, $status: String, $client_id: ID, $provider_id: ID) {
+                cms1500s(
+                    keywords: $keywords, 
+                    sort_by: $sort_by, 
+                    status: $status, 
+                    client_id: $client_id, 
+                    provider_id: $provider_id
+                ) {
+                    id
+                    name
+                    status
+                    amount_paid
+                    amount_reimbursed
+                    service_date
+                    patient {
+                        id
+                        first_name
+                        last_name
+                    }
+                }
+            }
+        `;
+
+    return await this.graphqlRequest(query, params);
+  }
+
+  // =============== PATIENT/CLIENT METHODS ===============
+
+  /**
+   * Get client by email
+   */
+  // async getClientByEmail(email) {
+  //   const query = `
+  //           query clients($keywords: String) {
+  //               clients(keywords: $keywords) {
+  //                   id
+  //                   first_name
+  //                   last_name
+  //                   email
+  //                   phone_number
+  //                   dob
+  //               }
+  //           }
+  //       `;
+
+  //   const response = await this.graphqlRequest(query, { keywords: email });
+  //   return response?.data?.clients?.[0] || null;
+  // }
+
+  /**
+   * Create a new client/patient
+   */
+  // async createClient(clientData) {
+  //   const mutation = `
+  //           mutation createClient(
+  //               $first_name: String,
+  //               $last_name: String,
+  //               $email: String,
+  //               $phone: String,
+  //               $dob: String
+  //           ) {
+  //               createClient(input: {
+  //                   first_name: $first_name,
+  //                   last_name: $last_name,
+  //                   email: $email,
+  //                   phone_number: $phone,
+  //                   dob: $dob,
+  //                   skip_email: false
+  //               }) {
+  //                   user {
+  //                       id
+  //                       first_name
+  //                       last_name
+  //                       email
+  //                   }
+  //                   messages {
+  //                       field
+  //                       message
+  //                   }
+  //               }
+  //           }
+  //       `;
+
+  //   const response = await this.graphqlRequest(mutation, clientData);
+  //   return response?.data?.createClient?.user || null;
+  // }
+
+  // =============== PAYMENT METHODS ===============
+
+  /**
+  //  * Store a card using Stripe token
+  //  */
+  // async storeCard(cardData) {
+  //   const mutation = `
+  //           mutation createStripeCustomerDetail(
+  //               $user_id: ID,
+  //               $token: String,
+  //               $card_type_label: String,
+  //               $is_default: Boolean
+  //           ) {
+  //               createStripeCustomerDetail(input: {
+  //                   user_id: $user_id,
+  //                   token: $token,
+  //                   card_type_label: $card_type_label,
+  //                   is_default: $is_default
+  //               }) {
+  //                   stripe_customer_detail {
+  //                       id
+  //                       last_four
+  //                       card_type
+  //                       is_default
+  //                   }
+  //                   messages {
+  //                       field
+  //                       message
+  //                   }
+  //               }
+  //           }
+  //       `;
+
+  //   const response = await this.graphqlRequest(mutation, cardData);
+  //   return response?.data?.createStripeCustomerDetail?.stripe_customer_detail || null;
+  // }
+
+  /**
+   * Create a billing item and charge
+   */
+  // async createBillingItem(billingData) {
+  //   const mutation = `
+  //           mutation createBillingItem(
+  //               $amount_paid: String,
+  //               $sender_id: ID,
+  //               $stripe_customer_detail_id: ID,
+  //               $stripe_idempotency_key: String,
+  //               $should_charge: Boolean,
+  //               $notes: String
+  //           ) {
+  //               createBillingItem(input: {
+  //                   amount_paid: $amount_paid,
+  //                   sender_id: $sender_id,
+  //                   stripe_customer_detail_id: $stripe_customer_detail_id,
+  //                   stripe_idempotency_key: $stripe_idempotency_key,
+  //                   should_charge: $should_charge,
+  //                   notes: $notes
+  //               }) {
+  //                   billing_item {
+  //                       id
+  //                       amount_paid
+  //                       status
+  //                   }
+  //                   messages {
+  //                       field
+  //                       message
+  //                   }
+  //               }
+  //           }
+  //       `;
+
+  //   const response = await this.graphqlRequest(mutation, billingData);
+  //   return response?.data?.createBillingItem?.billing_item || null;
+  // }
 
 }
+
 
 
 export default new HealthieAPI();

@@ -42,7 +42,7 @@ const BookingConfirmation = ({ bookingData }) => {
                             <Box>
                                 <Typography variant="body2" color="#5f6368">Doctor</Typography>
                                 <Typography variant="body1" fontWeight={ 500 }>
-                                    { bookingData.appointment?.doctor.full_name }
+                                    { bookingData.appointment?.doctor?.full_name }
                                 </Typography>
                             </Box>
                         </Box>
@@ -96,15 +96,6 @@ const BookingConfirmation = ({ bookingData }) => {
                             <ListItemText
                                 primary="Check your email for confirmation details"
                                 secondary="You'll receive a detailed confirmation with all appointment information"
-                            />
-                        </ListItem>
-                        <ListItem>
-                            <ListItemIcon>
-                                <VideoCall sx={ { color: theme.palette.primary.main } } />
-                            </ListItemIcon>
-                            <ListItemText
-                                primary="Join the video call 15 minutes early"
-                                secondary="You'll receive a secure video call link before your appointment if you select a Vedio Call option"
                             />
                         </ListItem>
                     </List>

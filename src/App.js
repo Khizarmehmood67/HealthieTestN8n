@@ -11,6 +11,7 @@ import ServiceSelector from './components/ServiceSelector';
 import DoctorSelector from './components/DoctorSelector';
 import PaymentFlow from './components/PaymentFlow';
 import BookingConfirmation from './components/BookingConfirmation';
+// import PatientForm from './components/PatientForm';
 import { ArrowBack } from '@mui/icons-material';
 
 const theme = createTheme({
@@ -25,6 +26,7 @@ const theme = createTheme({
 });
 
 const STEPS = {
+  Paient: 'patient',
   LOCATION: 'location',
   AVAILABILITY: 'availability',
   DOCTOR: 'doctor',
@@ -33,7 +35,7 @@ const STEPS = {
 };
 
 function App() {
-  const [currentStep, setCurrentStep] = useState(STEPS.LOCATION);
+  const [currentStep, setCurrentStep] = useState(STEPS.Paient);
   const [bookingData, setBookingData] = useState({
     location: null,
     service: null,
@@ -64,6 +66,14 @@ function App() {
   };
   const renderCurrentStep = () => {
     switch (currentStep) {
+      // case STEPS.Paient:
+      //   return (
+      //     <PatientForm
+      //       onNext={ (info) => {
+      //         updateBookingData('patient', info);
+      //         nextStep();
+      //       } } />
+      //   );
       case STEPS.LOCATION:
         return (
           <LocationSelector

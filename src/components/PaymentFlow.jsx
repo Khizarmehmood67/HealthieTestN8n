@@ -1,135 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Box, Typography, Card, CardContent, TextField, Button, Grid,
-    Alert, Stepper, Step, StepLabel, Divider, CircularProgress,
-    useTheme, MenuItem, Radio, RadioGroup, FormControlLabel, Dialog,
-    DialogTitle, DialogContent, DialogActions
+    Box, Typography, Card, CardContent, Button, Grid,
+    Alert, CircularProgress, Divider, useTheme, TextField,
+    FormControlLabel, Checkbox, MenuItem, Stepper, Step, StepLabel,
+    RadioGroup, Radio
 } from '@mui/material';
-import { Security, Person, CreditCard } from '@mui/icons-material';
+import { CreditCard, Lock, Security, HealthAndSafety } from '@mui/icons-material';
 import { loadStripe } from '@stripe/stripe-js';
 import {
     Elements,
-    CardElement,
+    CardNumberElement,
+    CardExpiryElement,
+    CardCvcElement,
     useStripe,
     useElements
 } from '@stripe/react-stripe-js';
 import healthieAPI from '../services/healthieAPI';
 
-// Initialize Stripe with your publishable key
-const stripePromise = loadStripe('pk_test_51S03pxPJX74EYF1eiChgHRtZ9BVMHgRGsgpNXOV2ZdZn7x2VC71Twle1OFDYy3zxWucGJcnnY1HLc8gNFyr9fU1w00MgDiE1L9');
+// Initialize Stripe with Healthie's official keys
+const HEALTHIE_STRIPE_KEY = process.env.NODE_ENV === 'production'
+    ? 'pk_live_WzFpsrfurxhcz0HJspt9nbnn'  // Healthie Production key
+    : 'pk_test_fAj7WlTrG0uc5Z9WHKQDdoTq'; // Healthie Staging/Sandbox key
 
-// Card Payment Component
-const CardPaymentForm = ({ amount, patientData, bookingData, onSuccess, onCancel }) => {
+const stripePromise = loadStripe(HEALTHIE_STRIPE_KEY);
+
+// Card Payment Form Component - Enhanced for Insurance
+const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocation, onSuccess, onError }) => {
     const stripe = useStripe();
     const elements = useElements();
     const [processing, setProcessing] = useState(false);
-    const [error, setError] = useState(null);
-    const [saveCard, setSaveCard] = useState(true);
+    const [cardholderName, setCardholderName] = useState('');
+    const [saveCard, setSaveCard] = useState(false);
+    const theme = useTheme();
 
-    const handleSubmit = async (event) => {
-        event.preventDefault();
-
-        if (!stripe || !elements) {
-            return;
-        }
-
-        setProcessing(true);
-        setError(null);
-
-        try {
-            // Step 1: Create a payment method using Stripe
-            const { error: stripeError, paymentMethod } = await stripe.createPaymentMethod({
-                type: 'card',
-                card: elements.getElement(CardElement),
-                billing_details: {
-                    name: `${patientData.firstName} ${patientData.lastName}`,
-                    email: patientData.email,
-                    phone: patientData.phone
-                }
-            });
-
-            if (stripeError) {
-                throw new Error(stripeError.message);
-            }
-
-            // Step 2: Create or get the client/patient in Healthie
-            let clientId;
-            const existingClient = await healthieAPI.getClientByEmail(patientData.email);
-
-            if (!existingClient) {
-                const newClient = await healthieAPI.createClient({
-                    first_name: patientData.firstName,
-                    last_name: patientData.lastName,
-                    email: patientData.email,
-                    phone: patientData.phone,
-                });
-                clientId = newClient.id;
-            } else {
-                clientId = existingClient.id;
-            }
-
-            // Step 3: Store the card in Healthie to get stripe_customer_detail_id
-            const cardStorageResult = await healthieAPI.storeCard({
-                client_id: clientId,
-                stripe_payment_method_id: paymentMethod.id,
-                is_default: saveCard
-            });
-
-            if (!cardStorageResult || !cardStorageResult.id) {
-                throw new Error('Failed to store payment method');
-            }
-
-            // Step 4: Create a requested payment for tracking
-            // Note: You might want to pass provider_id as recipient_id depending on your workflow
-            const requestedPayment = await healthieAPI.createRequestedPayment({
-                recipient_id: clientId, // or use provider_id if payment goes to provider
-                sender_id: clientId,
-                amount: amount.toString(),
-                service_name: bookingData.service?.name || 'Appointment',
-                appointment_id: bookingData.appointment?.id,
-                offering_id: bookingData.service?.id,
-                status: "Pending"
-            });
-
-            const requestedPaymentId = requestedPayment.id;
-
-            // Step 5: Charge the patient using createBillingItem
-            const billingResult = await healthieAPI.createBillingItem({
-                amount_paid: amount.toString(),
-                sender_id: clientId,
-                requested_payment_id: requestedPaymentId,
-                stripe_idempotency_key: crypto.randomUUID(),
-                stripe_customer_detail_id: cardStorageResult.id,
-                should_charge: true
-            });
-
-            if (billingResult.messages && billingResult.messages.length > 0) {
-                // Handle any error messages from the billing item creation
-                const errorMessages = billingResult.messages.map(m => m.message).join(', ');
-                throw new Error(errorMessages);
-            }
-
-            if (!billingResult.billingItem || !billingResult.billingItem.id) {
-                throw new Error('Payment processing failed');
-            }
-
-            // Success! Payment has been charged
-            onSuccess({
-                billingItemId: billingResult.billingItem.id,
-                stripeCustomerDetailId: cardStorageResult.id,
-                paymentMethodId: paymentMethod.id,
-                cardSaved: saveCard
-            });
-
-        } catch (err) {
-            console.error('Payment error:', err);
-            setError(err.message || 'Payment failed. Please try again.');
-        } finally {
-            setProcessing(false);
-        }
-    };
-
-    const cardElementOptions = {
+    const elementOptions = {
         style: {
             base: {
                 fontSize: '16px',
@@ -137,666 +41,876 @@ const CardPaymentForm = ({ amount, patientData, bookingData, onSuccess, onCancel
                 '::placeholder': {
                     color: '#aab7c4',
                 },
-                fontFamily: 'Roboto, sans-serif',
+                fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
             },
             invalid: {
                 color: '#9e2146',
+                iconColor: '#9e2146'
             },
         },
     };
 
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+
+        if (!stripe || !elements || !cardholderName) {
+            onError('Please fill in all fields');
+            return;
+        }
+
+        setProcessing(true);
+
+        try {
+            // Step 1: Create or get client in Healthie
+            let client = await healthieAPI.getClientByEmail(bookingData.patient.email);
+
+            if (!client) {
+                client = await healthieAPI.createClient({
+                    first_name: bookingData.patient.firstName,
+                    last_name: bookingData.patient.lastName,
+                    email: bookingData.patient.email,
+                    phone: bookingData.patient.phone,
+                    dob: bookingData.patient.dateOfBirth
+                });
+            }
+
+            // Step 2: Handle payment based on billing type
+            let billingResult = null;
+            let appointmentData = {
+                user_id: client.id,
+                appointment_type_id: bookingData.service?.id,
+                contact_type: bookingData.patient.contact_type || 'In Person',
+                other_party_id: bookingData.appointment?.providerId,
+                datetime: bookingData.appointment?.date
+            };
+
+            if (isOhioLocation && insuranceData?.verified && insuranceData?.billingType === 'insurance') {
+                // Create CMS1500 claim for insurance billing
+                const cms1500Data = {
+                    patient: {
+                        id: client.id,
+                        first_name: bookingData.patient.firstName,
+                        last_name: bookingData.patient.lastName,
+                        email: bookingData.patient.email,
+                        phone_number: bookingData.patient.phone,
+                        // location: {
+                        //     line1: bookingData.patient.address1 || '',
+                        //     city: bookingData.patient.city || '',
+                        //     state: bookingData.patient.state || '',
+                        //     zip: bookingData.patient.zip || ''
+                        // }
+                    },
+                    dietitian: {
+                        id: bookingData.appointment?.providerId,
+                        first_name: bookingData.appointment?.doctor?.first_name || '',
+                        last_name: bookingData.appointment?.doctor?.last_name || '',
+                        npi: bookingData.appointment?.doctor?.npi || ''
+                    },
+                    service_location_id: "2",
+                    amount_paid: '0.00', // Will be paid by insurance
+                    cms1500_policies: [{
+                        insurance_plan_id: insuranceData.planId,
+                        insurance_card_holder_id: insuranceData.memberId,
+                        insurance_card_group_number: insuranceData.groupNumber || '',
+                        rank: insuranceData.isPrimary ? 'primary' : 'secondary',
+                        relationship_to_card_holder: insuranceData.relationshipToInsured || 'self'
+                    }],
+                    icd_codes_cms1500s: bookingData.icdCodes || [
+                        { code: 'Z00.00', description: 'General examination' }
+                    ],
+                    cpt_codes_cms1500s: bookingData.cptCodes || [
+                        {
+                            code: '99213',
+                            description: 'Office visit, established patient',
+                            units: 1,
+                            fee: bookingData.service?.price?.toString() || '150.00'
+                        }
+                    ],
+                    client_sig_on_file: true
+                };
+
+                const cms1500Result = await healthieAPI.createCMS1500(cms1500Data);
+
+                if (cms1500Result?.createCms1500?.cms1500) {
+                    // If there's a copay, charge it
+                    if (totalAmount > 0) {
+                        const { token, error: tokenError } = await stripe.createToken(
+                            elements.getElement(CardNumberElement),
+                            { name: cardholderName }
+                        );
+
+                        if (tokenError) throw new Error(tokenError.message);
+
+                        const cardStorageResult = await healthieAPI.storeCard({
+                            user_id: client.id,
+                            token: token.id,
+                            card_type_label: 'personal',
+                            is_default: true
+                        });
+
+                        billingResult = await healthieAPI.createBillingItem({
+                            amount_paid: totalAmount.toString(),
+                            sender_id: client.id,
+                            stripe_customer_detail_id: cardStorageResult.id,
+                            stripe_idempotency_key: crypto.randomUUID(),
+                            should_charge: true,
+                            notes: 'Insurance copay'
+                        });
+
+                        appointmentData.billing_item_id = billingResult.id;
+                    }
+
+                    appointmentData.cms1500_id = cms1500Result.createCms1500.cms1500.id;
+                }
+
+            } else if (isOhioLocation && insuranceData?.requestSuperbill) {
+                // Process payment first, then create superbill
+                const { token, error: tokenError } = await stripe.createToken(
+                    elements.getElement(CardNumberElement),
+                    { name: cardholderName }
+                );
+
+                if (tokenError) throw new Error(tokenError.message);
+
+                const cardStorageResult = await healthieAPI.storeCard({
+                    user_id: client.id,
+                    token: token.id,
+                    card_type_label: 'personal',
+                    is_default: true
+                });
+
+                billingResult = await healthieAPI.createBillingItem({
+                    amount_paid: totalAmount.toString(),
+                    sender_id: client.id,
+                    stripe_customer_detail_id: cardStorageResult.id,
+                    stripe_idempotency_key: crypto.randomUUID(),
+                    should_charge: true
+                });
+
+                appointmentData.billing_item_id = billingResult.id;
+
+                // Create superbill for reimbursement
+                const superbillData = {
+                    patient_id: client.id,
+                    patient_dob: bookingData.patient.dateOfBirth,
+                    dietitian_id: bookingData.appointment?.providerId,
+                    provider_name: bookingData.appointment?.doctor?.full_name || '',
+                    service_date: new Date(bookingData.appointment?.date).toISOString().split('T')[0],
+                    amount_paid: totalAmount.toString(),
+                    status: 'Not Sent',
+                    icd_codes_super_bills: bookingData.icdCodes || [
+                        { code: 'Z00.00', description: 'General examination' }
+                    ],
+                    cpt_codes_super_bills: bookingData.cptCodes || [
+                        {
+                            code: '99213',
+                            description: 'Office visit',
+                            units: 1,
+                            fee: totalAmount.toString()
+                        }
+                    ]
+                };
+
+                const superbillResult = await healthieAPI.createSuperbill(superbillData);
+
+                // Email superbill to patient
+                if (superbillResult?.createSuperBill?.superBill) {
+                    await healthieAPI.updateSuperbill(
+                        superbillResult.createSuperBill.superBill.id,
+                        { status: 'Sent', should_email_to_client: true }
+                    );
+                    appointmentData.superbill_id = superbillResult.createSuperBill.superBill.id;
+                }
+
+            } else {
+                // Standard self-pay payment
+                const { token, error: tokenError } = await stripe.createToken(
+                    elements.getElement(CardNumberElement),
+                    { name: cardholderName }
+                );
+
+                if (tokenError) throw new Error(tokenError.message);
+
+                const cardStorageResult = await healthieAPI.storeCard({
+                    user_id: client.id,
+                    token: token.id,
+                    card_type_label: 'personal',
+                    is_default: true
+                });
+
+                billingResult = await healthieAPI.createBillingItem({
+                    amount_paid: totalAmount.toString(),
+                    sender_id: client.id,
+                    stripe_customer_detail_id: cardStorageResult.id,
+                    stripe_idempotency_key: crypto.randomUUID(),
+                    should_charge: true
+                });
+
+                appointmentData.billing_item_id = billingResult.id;
+            }
+
+            // Step 3: Create appointment
+            const appointment = await healthieAPI.createAppointment(appointmentData);
+
+            // Success
+            onSuccess({
+                appointmentId: appointment?.id || 'pending',
+                billingItemId: billingResult?.id,
+                cms1500Id: appointmentData.cms1500_id,
+                superbillId: appointmentData.superbill_id,
+                amount: totalAmount,
+                status: 'succeeded',
+                clientId: client.id,
+                insuranceClaim: isOhioLocation && insuranceData?.verified && insuranceData?.billingType === 'insurance'
+            });
+
+        } catch (error) {
+            console.error('Payment error:', error);
+            onError(error.message || 'Payment failed');
+        } finally {
+            setProcessing(false);
+        }
+    };
+
     return (
         <Box component="form" onSubmit={ handleSubmit }>
-            <Typography variant="h6" gutterBottom>
-                Payment Details
-            </Typography>
-
-            <Box sx={ {
-                border: '1px solid #e0e0e0',
-                borderRadius: 1,
-                p: 2,
-                mb: 2,
-                backgroundColor: '#fafafa'
-            } }>
-                <CardElement options={ cardElementOptions } />
-            </Box>
-
-            <FormControlLabel
-                control={
-                    <input
-                        type="checkbox"
-                        checked={ saveCard }
-                        onChange={ (e) => setSaveCard(e.target.checked) }
+            <Grid container spacing={ 2 }>
+                {/* Cardholder Name */ }
+                <Grid item size={ { xs: 12 } }>
+                    <TextField
+                        label="Cardholder Name"
+                        value={ cardholderName }
+                        onChange={ (e) => setCardholderName(e.target.value) }
+                        fullWidth
+                        required
+                        size="small"
+                        sx={ { mb: 1 } }
                     />
-                }
-                label="Save card for future appointments"
-                sx={ { mb: 2 } }
-            />
+                </Grid>
 
-            { error && (
-                <Alert severity="error" sx={ { mb: 2 } }>
-                    { error }
-                </Alert>
-            ) }
+                {/* Only show card fields if payment is required */ }
+                { totalAmount > 0 && (
+                    <>
+                        {/* Card Number */ }
+                        <Grid item size={ { xs: 12 } }>
+                            <Typography variant="caption" color="textSecondary" sx={ { mb: 0.5, display: 'block' } }>
+                                Card Number
+                            </Typography>
+                            <Box sx={ {
+                                border: '1px solid #d0d0d0',
+                                borderRadius: 1,
+                                p: 1.5,
+                                '&:hover': { borderColor: '#b0b0b0' },
+                                '&:focus-within': {
+                                    borderColor: theme.palette.primary.main,
+                                    borderWidth: '2px',
+                                    p: '11px'
+                                }
+                            } }>
+                                <CardNumberElement options={ elementOptions } />
+                            </Box>
+                        </Grid>
 
-            <Box sx={ { display: 'flex', gap: 2, mt: 3 } }>
-                <Button
-                    variant="outlined"
-                    onClick={ onCancel }
-                    disabled={ processing }
-                    fullWidth
-                >
-                    Cancel
-                </Button>
-                <Button
-                    type="submit"
-                    variant="contained"
-                    disabled={ !stripe || processing }
-                    fullWidth
-                    sx={ { color: 'white' } }
-                >
-                    { processing ? (
-                        <>
-                            <CircularProgress size={ 20 } sx={ { mr: 1, color: 'white' } } />
-                            Processing...
-                        </>
-                    ) : (
-                        `Pay $${amount}`
-                    ) }
-                </Button>
+                        {/* Expiry and CVC */ }
+                        <Grid item size={ { xs: 6 } }>
+                            <Typography variant="caption" color="textSecondary" sx={ { mb: 0.5, display: 'block' } }>
+                                Expiry Date
+                            </Typography>
+                            <Box sx={ {
+                                border: '1px solid #d0d0d0',
+                                borderRadius: 1,
+                                p: 1.5,
+                                '&:hover': { borderColor: '#b0b0b0' },
+                                '&:focus-within': {
+                                    borderColor: theme.palette.primary.main,
+                                    borderWidth: '2px',
+                                    p: '11px'
+                                }
+                            } }>
+                                <CardExpiryElement options={ elementOptions } />
+                            </Box>
+                        </Grid>
+
+                        <Grid item size={ { xs: 6 } }>
+                            <Typography variant="caption" color="textSecondary" sx={ { mb: 0.5, display: 'block' } }>
+                                CVC
+                            </Typography>
+                            <Box sx={ {
+                                border: '1px solid #d0d0d0',
+                                borderRadius: 1,
+                                p: 1.5,
+                                '&:hover': { borderColor: '#b0b0b0' },
+                                '&:focus-within': {
+                                    borderColor: theme.palette.primary.main,
+                                    borderWidth: '2px',
+                                    p: '11px'
+                                }
+                            } }>
+                                <CardCvcElement options={ elementOptions } />
+                            </Box>
+                        </Grid>
+
+                        {/* Save Card Option */ }
+                        <Grid item size={ { xs: 12 } }>
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        checked={ saveCard }
+                                        onChange={ (e) => setSaveCard(e.target.checked) }
+                                        size="small"
+                                    />
+                                }
+                                label={ <Typography variant="body2">Save card for future appointments</Typography> }
+                            />
+                        </Grid>
+                    </>
+                ) }
+
+                {/* Submit Button */ }
+                <Grid item size={ { xs: 12 } }>
+                    <Button
+                        type="submit"
+                        variant="contained"
+                        fullWidth
+                        disabled={ !stripe || processing }
+                        sx={ {
+                            py: 1.5,
+                            mt: 2,
+                            backgroundColor: theme.palette.primary.main,
+                            color: 'white',
+                            '&:hover': {
+                                backgroundColor: theme.palette.primary.dark,
+                            }
+                        } }
+                    >
+                        { processing ? (
+                            <>
+                                <CircularProgress size={ 20 } sx={ { mr: 1, color: 'white' } } />
+                                Processing...
+                            </>
+                        ) : totalAmount > 0 ? (
+                            <>
+                                <Lock sx={ { mr: 1, fontSize: 20 } } />
+                                Pay ${ totalAmount }
+                            </>
+                        ) : (
+                            <>
+                                <HealthAndSafety sx={ { mr: 1, fontSize: 20 } } />
+                                Submit Insurance Claim
+                            </>
+                        ) }
+                    </Button>
+                </Grid>
+            </Grid>
+
+            {/* Security Badge */ }
+            <Box sx={ { display: 'flex', alignItems: 'center', justifyContent: 'center', mt: 2 } }>
+                <Lock sx={ { fontSize: 14, color: 'text.secondary', mr: 0.5 } } />
+                <Typography variant="caption" color="text.secondary">
+                    { totalAmount > 0 ? 'Secured by Stripe' : 'Insurance claim will be processed securely' }
+                </Typography>
             </Box>
-
-            <Typography variant="caption" color="text.secondary" sx={ { display: 'block', textAlign: 'center', mt: 2 } }>
-                Your payment information is encrypted and secure
-            </Typography>
         </Box>
     );
 };
 
-// Main PaymentFlow Component
+// Main PaymentFlow Component - Enhanced with Insurance
 const PaymentFlow = ({ bookingData, onComplete }) => {
-    const [currentSubStep, setCurrentSubStep] = useState(0);
+    // Check if Ohio location for insurance
+    const isOhioLocation = bookingData.location?.code === "OH" || bookingData.location?.state === "OH";
+
+    const [currentSubStep, setCurrentSubStep] = useState(isOhioLocation ? 0 : 1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [showCardDialog, setShowCardDialog] = useState(false);
-    const theme = useTheme();
-
+    const [paymentSuccess, setPaymentSuccess] = useState(false);
     const [insuranceData, setInsuranceData] = useState({
-        provider: '',
-        member_id: '',
-        group_number: ''
+        hasInsurance: false,
+        planId: '',
+        memberId: '',
+        groupNumber: '',
+        relationshipToInsured: 'self',
+        isPrimary: true,
+        billingType: 'self-pay',
+        requestSuperbill: false,
+        verified: false,
+        copayAmount: null,
+        coverageAmount: null
     });
-
-    const [patientData, setPatientData] = useState({
-        firstName: '',
-        lastName: '',
-        email: '',
-        phone: '',
-        appointment_type_id: '',
-        contact_type: 'In Person'
-    });
-
-    const [insuranceResult, setInsuranceResult] = useState(null);
-    const [paymentMethod, setPaymentMethod] = useState('cash');
-    const subStepLabels = ['Insurance Verification', 'Patient Information', 'Payment Confirmation'];
     const [insurancePlans, setInsurancePlans] = useState([]);
-    const [allClients, setAllClients] = useState([]);
-    const [appointmentType, setAppointmentType] = useState([]);
+    const theme = useTheme();
+    console.log("insuranceData", insuranceData);
 
     useEffect(() => {
-        fetchInsurancePlans();
-        fetchAppointmentTypes();
-        fetchClient();
-    }, []);
-
-    const fetchAppointmentTypes = async () => {
-        const types = await healthieAPI.getAppointmentTypes();
-        if (types) {
-            setAppointmentType(types);
+        if (bookingData.patient?.insurance && isOhioLocation) {
+            setInsuranceData(prev => ({
+                ...prev,
+                ...bookingData.patient.insurance,
+                hasInsurance: true
+            }));
         }
-    };
+        if (isOhioLocation) {
+            fetchInsurancePlans();
+        }
+    }, [bookingData]);
 
     const fetchInsurancePlans = async () => {
-        const plans = await healthieAPI.getInsurancePlans({ is_accepted: true });
-        if (plans.data) {
-            setInsurancePlans(plans.data.insurancePlans);
+        try {
+            const plans = await healthieAPI.getInsurancePlans({ is_accepted: true });
+            setInsurancePlans(plans?.data?.insurancePlans || plans || []);
+
+        } catch (error) {
+            console.error('Failed to fetch insurance plans:', error);
         }
     };
 
-    const fetchClient = async () => {
-        const client = await healthieAPI.getClient();
-        if (client) {
-            setAllClients(client);
-        }
-    };
-
-    // Handle insurance verification
     const handleInsuranceSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
         setError(null);
 
         try {
-            const result = await healthieAPI.verifyInsurance({
-                insurancePlanIds: [insuranceData.provider],
+            // Verify insurance eligibility
+            const verificationResult = await healthieAPI.verifyInsurance({
+                insurancePlanIds: insuranceData.planId,
             });
 
-            if (result.verified) {
-                setInsuranceResult(result);
+            if (verificationResult) {
+                setInsuranceData(prev => ({
+                    ...prev,
+                    verified: true,
+                    copayAmount: verificationResult.copay_amount || 25,
+                    coverageAmount: verificationResult.coverage_amount || (bookingData.service?.price - 25)
+                }));
                 setCurrentSubStep(1);
             } else {
-                setError('Insurance verification failed: ' + result.message);
+                setError('Insurance verification failed. You can proceed with self-pay or request a superbill.');
+                setInsuranceData(prev => ({
+                    ...prev,
+                    verified: false,
+                    billingType: 'self-pay'
+                }));
             }
         } catch (error) {
-            setError('Insurance verification failed: ' + error.message);
+            console.error('Insurance verification error:', error);
+            setError('Unable to verify insurance. You can proceed with self-pay.');
+            setInsuranceData(prev => ({
+                ...prev,
+                verified: false,
+                billingType: 'self-pay'
+            }));
         } finally {
             setLoading(false);
         }
     };
 
-    // Handle patient information submission
-    const handlePatientSubmit = async (e) => {
-        e.preventDefault();
-        setCurrentSubStep(2);
+    // Calculate total amount based on insurance (Ohio only)
+    const calculateTotalAmount = () => {
+        if (isOhioLocation && insuranceData.verified && insuranceData.billingType === 'insurance') {
+            return insuranceData.copayAmount || 0;
+        }
+        return bookingData.service?.price || 75;
     };
 
-    // Handle card payment
-    const handleCardPayment = () => {
-        setShowCardDialog(true);
+    const totalAmount = calculateTotalAmount();
+
+    // Format date helper
+    const formatDate = (date) => {
+        return new Date(date).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+        });
     };
 
-    // Handle successful card payment
-    const handleCardPaymentSuccess = async (paymentData) => {
-        setShowCardDialog(false);
-        setLoading(true);
-        setError(null);
+    const handlePaymentSuccess = (paymentData) => {
+        setPaymentSuccess(true);
 
-        try {
-            // Create the appointment now that payment is confirmed
-            const getCLient = allClients.find(client => client.email === patientData.email);
-            let createClient = {};
+        const appointmentData = {
+            id: paymentData.appointmentId,
+            patient: bookingData.patient,
+            appointment: bookingData.appointment,
+            service: bookingData.service,
+            location: bookingData.location,
+            payment: paymentData,
+            insurance: insuranceData,
+            confirmationCode: 'CONF' + Math.random().toString(36).substr(2, 9).toUpperCase()
+        };
 
-            if (!getCLient) {
-                createClient = await healthieAPI.createClient({
-                    first_name: patientData.firstName,
-                    last_name: patientData.lastName,
-                    email: patientData.email,
-                    phone: patientData.phone,
-                });
-            }
 
-            const result = await healthieAPI.createAppointment({
-                ...patientData,
-                user_id: getCLient ? getCLient.id : createClient.id,
-                datetime: bookingData.appointment.date,
-                doctor_id: bookingData.appointment?.doctor?.id, // Add the doctor_id
-                billing_item_id: paymentData.billingItemId,
-                payment_status: 'paid'
+        setTimeout(() => {
+            onComplete({
+                appointment: appointmentData,
+                payment: paymentData,
+                confirmation: appointmentData.confirmationCode
             });
-
-            // Optionally update the appointment with billing info
-            if (result && result.id && paymentData.billingItemId) {
-                await healthieAPI.updateAppointmentWithBilling(result.id, paymentData.billingItemId);
-            }
-
-            if (result) {
-                onComplete({
-                    appointment: result,
-                    payment: {
-                        method: 'card',
-                        billingItemId: paymentData.billingItemId,
-                        stripeCustomerDetailId: paymentData.stripeCustomerDetailId,
-                        paid: true
-                    },
-                    confirmation: result.confirmed
-                });
-            } else {
-                throw new Error('Failed to create appointment');
-            }
-
-        } catch (error) {
-            console.error('Booking failed:', error);
-            setError('Booking failed: ' + error.message);
-        } finally {
-            setLoading(false);
-        }
+        }, 2000);
     };
 
-    // Handle cash booking
-    const handleCashBooking = async () => {
-        setLoading(true);
-        setError(null);
-        let createClient = {};
-
-        try {
-            const getCLient = allClients.find(client => client.email === patientData.email);
-            if (!getCLient) {
-                createClient = await healthieAPI.createClient({
-                    first_name: patientData.firstName,
-                    last_name: patientData.lastName,
-                    email: patientData.email,
-                    phone: patientData.phone,
-                });
-            }
-
-            const result = await healthieAPI.createAppointment({
-                ...patientData,
-                user_id: getCLient ? getCLient.id : createClient.id,
-                datetime: bookingData.appointment.date,
-                doctor_id: bookingData.appointment?.doctor?.id, // Add the doctor_id
-                payment_method: 'cash',
-                payment_status: 'pending'
-            });
-
-            if (result) {
-                onComplete({
-                    appointment: result,
-                    payment: {
-                        method: 'cash',
-                        paid: false
-                    },
-                    confirmation: result.confirmed
-                });
-            } else {
-                throw new Error('Failed to create appointment');
-            }
-
-        } catch (error) {
-            console.error('Booking failed:', error);
-            setError('Booking failed: ' + error.message);
-        } finally {
-            setLoading(false);
-        }
+    const handlePaymentError = (errorMessage) => {
+        setError(errorMessage);
     };
 
+    // Render Insurance Step
     const renderInsuranceStep = () => (
         <Card>
             <CardContent sx={ { p: 4 } }>
                 <Box sx={ { display: 'flex', alignItems: 'center', mb: 3 } }>
-                    <Security sx={ { fontSize: 24, color: theme.palette.primary.main, mr: 1 } } />
+                    <HealthAndSafety sx={ { fontSize: 24, color: theme.palette.primary.main, mr: 1 } } />
                     <Typography variant="h6" fontWeight={ 600 }>
-                        Insurance Verification
+                        Insurance Information
                     </Typography>
                 </Box>
 
                 { error && (
-                    <Alert severity="error" sx={ { mb: 3 } }>
+                    <Alert severity="error" sx={ { mb: 3 } } onClose={ () => setError(null) }>
                         { error }
                     </Alert>
                 ) }
 
                 <form onSubmit={ handleInsuranceSubmit }>
                     <Grid container spacing={ 3 }>
-                        <Grid item size={ { xs: 12, md: 6 } }>
-                            <TextField
-                                select
-                                value={ insuranceData.provider }
-                                onChange={ (e) => setInsuranceData(prev => ({ ...prev, provider: e.target.value })) }
-                                fullWidth
-                                required
-                                label='Provider'
-                            >
-                                { insurancePlans.map((plan) => (
-                                    <MenuItem key={ plan.payer_id } value={ plan.payer_id }>
-                                        { plan.payer_name }
-                                    </MenuItem>
-                                )) }
-                            </TextField>
-                        </Grid>
-
-                        <Grid item size={ { xs: 12, md: 6 } }>
-                            <TextField
-                                label="Member ID"
-                                value={ insuranceData.member_id }
-                                onChange={ (e) => setInsuranceData(prev => ({ ...prev, member_id: e.target.value })) }
-                                fullWidth
-                                required
-                            />
-                        </Grid>
-
-                        <Grid item size={ { xs: 12, md: 6 } }>
-                            <TextField
-                                label="Group Number (Optional)"
-                                value={ insuranceData.group_number }
-                                onChange={ (e) => setInsuranceData(prev => ({ ...prev, group_number: e.target.value })) }
-                                fullWidth
-                            />
-                        </Grid>
-
-                        <Grid item xs={ 12 }>
-                            <Button
-                                type="submit"
-                                variant="contained"
-                                size="large"
-                                disabled={ loading }
-                                fullWidth
-                                sx={ { py: 1.5, color: "white" } }
-                            >
-                                { loading ? (
-                                    <>
-                                        <CircularProgress size={ 20 } sx={ { mr: 1, color: 'white' } } />
-                                        Verifying Insurance...
-                                    </>
-                                ) : (
-                                    'Verify Insurance'
-                                ) }
-                            </Button>
-                        </Grid>
-
-                        <Grid item xs={ 12 }>
-                            <Button
-                                variant="text"
-                                onClick={ () => setCurrentSubStep(1) }
-                                fullWidth
-                            >
-                                Skip Insurance (Pay Full Amount)
-                            </Button>
-                        </Grid>
-                    </Grid>
-                </form>
-            </CardContent>
-        </Card>
-    );
-
-    const renderPatientStep = () => (
-        <Card>
-            <CardContent sx={ { p: 4 } }>
-                <Box sx={ { display: 'flex', alignItems: 'center', mb: 3 } }>
-                    <Person sx={ { fontSize: 24, color: theme.palette.primary.main, mr: 1 } } />
-                    <Typography variant="h6" fontWeight={ 600 }>
-                        Patient Information
-                    </Typography>
-                </Box>
-
-                { insuranceResult && (
-                    <Alert severity="success" sx={ { mb: 3 } }>
-                        Insurance verified! Your copay is ${ insuranceResult.copay_amount }
-                    </Alert>
-                ) }
-
-                <form onSubmit={ handlePatientSubmit }>
-                    <Grid container spacing={ 3 }>
-                        <Grid item size={ { xs: 12, md: 4 } }>
-                            <TextField
-                                label="First Name"
-                                value={ patientData.firstName }
-                                onChange={ (e) => setPatientData(prev => ({ ...prev, firstName: e.target.value })) }
-                                fullWidth
-                                required
-                            />
-                        </Grid>
-
-                        <Grid item size={ { xs: 12, md: 4 } }>
-                            <TextField
-                                label="Last Name"
-                                value={ patientData.lastName }
-                                onChange={ (e) => setPatientData(prev => ({ ...prev, lastName: e.target.value })) }
-                                fullWidth
-                                required
-                            />
-                        </Grid>
-
-                        <Grid item size={ { xs: 12, md: 4 } }>
-                            <TextField
-                                label="Email"
-                                type="email"
-                                value={ patientData.email }
-                                onChange={ (e) => setPatientData(prev => ({ ...prev, email: e.target.value })) }
-                                fullWidth
-                                required
-                            />
-                        </Grid>
-
-                        <Grid item size={ { xs: 12, md: 4 } }>
-                            <TextField
-                                label="Phone Number"
-                                type="tel"
-                                value={ patientData.phone }
-                                onChange={ (e) => setPatientData(prev => ({ ...prev, phone: e.target.value })) }
-                                fullWidth
-                                required
-                            />
-                        </Grid>
-
-                        <Grid item size={ { xs: 12, md: 4 } }>
-                            <TextField
-                                label="Appointment Type"
-                                select
-                                value={ patientData.appointment_type_id }
-                                onChange={ (e) => setPatientData(prev => ({ ...prev, appointment_type_id: e.target.value })) }
-                                fullWidth
-                                required
-                            >
-                                { appointmentType.map((type) => (
-                                    <MenuItem key={ type.id } value={ type.id }>
-                                        { type.name }
-                                    </MenuItem>
-                                )) }
-                            </TextField>
-                        </Grid>
-
                         <Grid item size={ { xs: 12 } }>
-                            <Typography variant="subtitle2" fontWeight={ 600 }>Select Contact Type</Typography>
-                            <RadioGroup
-                                value={ patientData.contact_type }
-                                sx={ { flexDirection: 'row' } }
-                                onChange={ (e) => setPatientData(prev => ({ ...prev, contact_type: e.target.value })) }
-                            >
-                                <FormControlLabel value="Healthie Video Call" control={ <Radio /> } label="Video Call" />
-                                <FormControlLabel value="Phone Call" control={ <Radio /> } label="Phone Call" />
-                                <FormControlLabel value="In Person" control={ <Radio /> } label="In-Person" />
-                            </RadioGroup>
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        checked={ insuranceData.hasInsurance }
+                                        onChange={ (e) => setInsuranceData(prev => ({
+                                            ...prev,
+                                            hasInsurance: e.target.checked,
+                                            billingType: e.target.checked ? 'insurance' : 'self-pay'
+                                        })) }
+                                    />
+                                }
+                                label="I have insurance coverage"
+                            />
                         </Grid>
 
-                        <Grid item size={ { xs: 12, md: 4 } }>
-                            <Button
-                                type="submit"
-                                variant="contained"
-                                size="small"
-                                fullWidth
-                                sx={ { py: 0.5, color: "white" } }
-                            >
-                                Continue to Confirmation
-                            </Button>
-                        </Grid>
+                        { insuranceData.hasInsurance && (
+                            <>
+                                <Grid item size={ { xs: 12, md: 6 } }>
+                                    <TextField
+                                        select
+                                        value={ insuranceData.planId }
+                                        onChange={ (e) => setInsuranceData(prev => ({ ...prev, planId: e.target.value })) }
+                                        fullWidth
+                                        required
+                                        label='Insurance Provider'
+                                        size="small"
+                                    >
+                                        { insurancePlans.map((plan) => (
+                                            <MenuItem key={ plan.id } value={ plan.id }>
+                                                { plan.name_and_id || plan.payer_name }
+                                            </MenuItem>
+                                        )) }
+                                    </TextField>
+                                </Grid>
+
+                                <Grid item size={ { xs: 12, md: 6 } }>
+                                    <TextField
+                                        label="Member ID"
+                                        value={ insuranceData.memberId }
+                                        onChange={ (e) => setInsuranceData(prev => ({ ...prev, memberId: e.target.value })) }
+                                        fullWidth
+                                        required
+                                        size="small"
+                                    />
+                                </Grid>
+
+                                <Grid item size={ { xs: 12, md: 6 } }>
+                                    <TextField
+                                        label="Group Number (Optional)"
+                                        value={ insuranceData.groupNumber }
+                                        onChange={ (e) => setInsuranceData(prev => ({ ...prev, groupNumber: e.target.value })) }
+                                        fullWidth
+                                        size="small"
+                                    />
+                                </Grid>
+
+                                <Grid item size={ { xs: 12, md: 6 } }>
+                                    <TextField
+                                        select
+                                        label="Relationship to Insured"
+                                        value={ insuranceData.relationshipToInsured }
+                                        onChange={ (e) => setInsuranceData(prev => ({ ...prev, relationshipToInsured: e.target.value })) }
+                                        fullWidth
+                                        required
+                                        size="small"
+                                    >
+                                        <MenuItem value="self">Self</MenuItem>
+                                        <MenuItem value="spouse">Spouse</MenuItem>
+                                        <MenuItem value="child">Child</MenuItem>
+                                        <MenuItem value="other">Other</MenuItem>
+                                    </TextField>
+                                </Grid>
+
+                                <Grid item xs={ 12 }>
+                                    <Typography variant="subtitle2" fontWeight={ 600 }>Billing Preference</Typography>
+                                    <RadioGroup
+                                        value={ insuranceData.billingType }
+                                        onChange={ (e) => setInsuranceData(prev => ({
+                                            ...prev,
+                                            billingType: e.target.value,
+                                            requestSuperbill: e.target.value === 'superbill'
+                                        })) }
+                                        row
+                                    >
+                                        <FormControlLabel value="insurance" control={ <Radio /> } label="Bill Insurance Directly" />
+                                        <FormControlLabel value="superbill" control={ <Radio /> } label="Pay Now & Get Superbill" />
+                                        <FormControlLabel value="self-pay" control={ <Radio /> } label="Self-Pay Only" />
+                                    </RadioGroup>
+                                </Grid>
+
+                                { insuranceData.billingType === 'superbill' && (
+                                    <Grid item xs={ 12 }>
+                                        <Alert severity="info">
+                                            You'll pay the full amount now and receive a Superbill to submit to your insurance for reimbursement.
+                                        </Alert>
+                                    </Grid>
+                                ) }
+
+                                { insuranceData.billingType === 'insurance' && (
+                                    <Grid item xs={ 12 }>
+                                        <Alert severity="info">
+                                            We'll verify your coverage and bill your insurance directly. You may only need to pay a copay.
+                                        </Alert>
+                                    </Grid>
+                                ) }
+
+                                <Grid item size={ { xs: 12 } }>
+                                    <Button
+                                        type="submit"
+                                        variant="contained"
+                                        size="large"
+                                        disabled={ loading }
+                                        fullWidth
+                                        sx={ { py: 1.5, color: "white" } }
+                                    >
+                                        { loading ? (
+                                            <>
+                                                <CircularProgress size={ 20 } sx={ { mr: 1, color: 'white' } } />
+                                                Verifying Insurance...
+                                            </>
+                                        ) : (
+                                            'Verify Insurance & Continue'
+                                        ) }
+                                    </Button>
+                                </Grid>
+                            </>
+                        ) }
+
+                        { !insuranceData.hasInsurance && (
+                            <Grid item size={ { xs: 12 } }>
+                                <Button
+                                    variant="contained"
+                                    onClick={ () => setCurrentSubStep(1) }
+                                    fullWidth
+                                    sx={ { py: 1.5, color: "white" } }
+                                >
+                                    Continue to Payment
+                                </Button>
+                            </Grid>
+                        ) }
                     </Grid>
                 </form>
             </CardContent>
         </Card>
     );
 
-    const renderConfirmationStep = () => {
-        const totalAmount = insuranceResult
-            ? insuranceResult.copay_amount
-            : bookingData.service?.price || 75;
+    // Render Payment Step
+    const renderPaymentStep = () => (
+        <Card sx={ { maxWidth: { xs: '100%', md: 800 }, mx: 'auto' } }>
+            <CardContent sx={ { p: { xs: 2, sm: 3, md: 4 } } }>
+                { !paymentSuccess ? (
+                    <>
+                        <Box sx={ { display: 'flex', alignItems: 'center', mb: 3 } }>
+                            <CreditCard sx={ { fontSize: 24, color: theme.palette.primary.main, mr: 1 } } />
+                            <Typography variant="h6" fontWeight={ 600 }>
+                                Booking Confirmation & Payment
+                            </Typography>
+                        </Box>
 
-        function formatDate(date) {
-            return new Date(date).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-            });
-        }
+                        {/* Show insurance success if verified - only for Ohio */ }
+                        { isOhioLocation && insuranceData.verified && insuranceData.billingType === 'insurance' && (
+                            <Alert severity="success" sx={ { mb: 3 } }>
+                                Insurance verified! Your copay amount is ${ insuranceData.copayAmount }
+                            </Alert>
+                        ) }
 
-        return (
-            <Card>
-                <CardContent sx={ { p: 4 } }>
-                    <Box sx={ { display: 'flex', alignItems: 'center', mb: 3 } }>
-                        <CreditCard sx={ { fontSize: 24, color: theme.palette.primary.main, mr: 1 } } />
-                        <Typography variant="h6" fontWeight={ 600 }>
-                            Booking Confirmation
+                        { isOhioLocation && insuranceData.requestSuperbill && (
+                            <Alert severity="info" sx={ { mb: 3 } }>
+                                A Superbill will be emailed to you after payment for insurance reimbursement.
+                            </Alert>
+                        ) }
+
+                        {/* Booking Summary */ }
+                        <Box sx={ { mb: 3, p: { xs: 2, sm: 3 }, bgcolor: '#f8fafc', borderRadius: 2 } }>
+                            <Typography variant="subtitle1" fontWeight={ 600 } gutterBottom>
+                                Appointment Summary
+                            </Typography>
+
+                            <Grid container spacing={ 1 }>
+                                <Grid item size={ { xs: 12, sm: 6 } }>
+                                    <Typography variant="body2" color="textSecondary">Service:</Typography>
+                                    <Typography variant="body2" fontWeight={ 500 }>{ bookingData.service?.name }</Typography>
+                                </Grid>
+
+                                { bookingData.appointment?.doctor && (
+                                    <Grid item size={ { xs: 12, sm: 6 } }>
+                                        <Typography variant="body2" color="textSecondary">Doctor:</Typography>
+                                        <Typography variant="body2" fontWeight={ 500 }>{ bookingData.appointment.doctor.full_name }</Typography>
+                                    </Grid>
+                                ) }
+
+                                <Grid item size={ { xs: 12, sm: 6 } }>
+                                    <Typography variant="body2" color="textSecondary">Date & Time:</Typography>
+                                    <Typography variant="body2" fontWeight={ 500 }>
+                                        { formatDate(bookingData.appointment?.date) } at { bookingData.appointment?.startTime }
+                                    </Typography>
+                                </Grid>
+
+                                <Grid item size={ { xs: 12, sm: 6 } }>
+                                    <Typography variant="body2" color="textSecondary">Location:</Typography>
+                                    <Typography variant="body2" fontWeight={ 500 }>{ bookingData.location?.name }</Typography>
+                                </Grid>
+
+                                <Grid item size={ { xs: 12, sm: 6 } }>
+                                    <Typography variant="body2" color="textSecondary">Patient:</Typography>
+                                    <Typography variant="body2" fontWeight={ 500 }>
+                                        { bookingData.patient.firstName } { bookingData.patient.lastName }
+                                    </Typography>
+                                </Grid>
+
+                                <Grid item size={ { xs: 12, sm: 6 } }>
+                                    <Typography variant="body2" color="textSecondary">Email:</Typography>
+                                    <Typography variant="body2" fontWeight={ 500 }>{ bookingData.patient.email }</Typography>
+                                </Grid>
+
+                                { isOhioLocation && insuranceData.hasInsurance && (
+                                    <Grid item size={ { xs: 12, sm: 6 } }>
+                                        <Typography variant="body2" color="textSecondary">Insurance:</Typography>
+                                        <Typography variant="body2" fontWeight={ 500 }>
+                                            { insurancePlans.find(p => p.id === insuranceData.planId)?.name_and_id || 'Selected' }
+                                        </Typography>
+                                    </Grid>
+                                ) }
+                            </Grid>
+
+                            <Divider sx={ { my: 2 } } />
+
+                            { isOhioLocation && insuranceData.verified && insuranceData.billingType === 'insurance' && (
+                                <>
+                                    <Box sx={ { display: 'flex', justifyContent: 'space-between', mb: 1 } }>
+                                        <Typography variant="body2">Service Fee:</Typography>
+                                        <Typography variant="body2">${ bookingData.service?.price || 75 }</Typography>
+                                    </Box>
+                                    <Box sx={ { display: 'flex', justifyContent: 'space-between', mb: 1 } }>
+                                        <Typography variant="body2" color="success.main">Insurance Coverage:</Typography>
+                                        <Typography variant="body2" color="success.main">
+                                            -${ insuranceData.coverageAmount || ((bookingData.service?.price || 75) - insuranceData.copayAmount) }
+                                        </Typography>
+                                    </Box>
+                                    <Divider sx={ { my: 1 } } />
+                                </>
+                            ) }
+
+                            <Box sx={ { display: 'flex', justifyContent: 'space-between' } }>
+                                <Typography variant="h6" fontWeight={ 600 }>
+                                    { isOhioLocation && insuranceData.verified && insuranceData.billingType === 'insurance' ? 'Copay Due:' : 'Total Amount:' }
+                                </Typography>
+                                <Typography variant="h6" fontWeight={ 600 } color="primary">
+                                    ${ totalAmount }
+                                </Typography>
+                            </Box>
+                        </Box>
+
+                        { error && (
+                            <Alert severity="error" sx={ { mb: 3 } } onClose={ () => setError(null) }>
+                                { error }
+                            </Alert>
+                        ) }
+
+                        {/* Payment Form */ }
+                        <Box sx={ { border: '1px solid #e0e0e0', borderRadius: 2, p: { xs: 2, sm: 3 } } }>
+                            <Typography variant="subtitle1" fontWeight={ 600 } gutterBottom>
+                                { totalAmount > 0 ? 'Payment Information' : 'Confirm Insurance Claim' }
+                            </Typography>
+
+                            <Elements stripe={ stripePromise }>
+                                <CardPaymentForm
+                                    bookingData={ bookingData }
+                                    totalAmount={ totalAmount }
+                                    insuranceData={ insuranceData }
+                                    isOhioLocation={ isOhioLocation }
+                                    onSuccess={ handlePaymentSuccess }
+                                    onError={ handlePaymentError }
+                                />
+                            </Elements>
+                        </Box>
+                    </>
+                ) : (
+                    // Success State
+                    <Box sx={ { textAlign: 'center', py: 4 } }>
+                        <Box sx={ {
+                            width: 80,
+                            height: 80,
+                            borderRadius: '50%',
+                            backgroundColor: 'success.light',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            mx: 'auto',
+                            mb: 3
+                        } }>
+                            <Typography variant="h4" color="success.main">✓</Typography>
+                        </Box>
+                        <Typography variant="h5" fontWeight={ 600 } color="success.main" gutterBottom>
+                            { totalAmount > 0 ? 'Payment Successful!' : 'Appointment Confirmed!' }
+                        </Typography>
+                        <Typography variant="body1" color="textSecondary">
+                            Your appointment has been confirmed.
+                        </Typography>
+                        { isOhioLocation && insuranceData.verified && insuranceData.billingType === 'insurance' && (
+                            <Typography variant="body2" color="textSecondary" sx={ { mt: 1 } }>
+                                Insurance claim will be processed automatically.
+                            </Typography>
+                        ) }
+                        { isOhioLocation && insuranceData.requestSuperbill && (
+                            <Typography variant="body2" color="textSecondary" sx={ { mt: 1 } }>
+                                Superbill has been emailed to you for insurance reimbursement.
+                            </Typography>
+                        ) }
+                        <CircularProgress sx={ { mt: 2 } } size={ 24 } />
+                        <Typography variant="caption" display="block" sx={ { mt: 1 } }>
+                            Redirecting to confirmation...
                         </Typography>
                     </Box>
+                ) }
+            </CardContent>
+        </Card>
+    );
 
-                    {/* Payment Method Selection */ }
-                    <Grid container spacing={ 2 } sx={ { mb: 4 } }>
-                        <Grid item size={ { sx: 6, md: 4.5 } }>
-                            <Typography variant="subtitle2" fontWeight={ 600 } sx={ { mb: 2 } }>
-                                Select Payment Method
-                            </Typography>
-                            <Box sx={ { display: 'flex', justifyContent: 'space-around', height: "70px" } }>
-                                <Box
-                                    sx={ {
-                                        width: '48%',
-                                        padding: '10px',
-                                        backgroundColor: paymentMethod === 'card' ? theme.palette.primary.main : '#f4f6f8',
-                                        color: paymentMethod === 'card' ? 'white' : 'text.primary',
-                                        textAlign: 'center',
-                                        borderRadius: '8px',
-                                        cursor: 'pointer',
-                                        '&:hover': {
-                                            backgroundColor: paymentMethod !== 'card' && '#e0e0e0',
-                                        },
-                                    } }
-                                    onClick={ () => setPaymentMethod('card') }
-                                >
-                                    <Typography variant="h6" sx={ { fontSize: "15px" } }>Card</Typography>
-                                    <Typography variant="body2" sx={ { fontSize: "10px" } }>Pay securely with your card</Typography>
-                                </Box>
-                                <Box
-                                    sx={ {
-                                        width: '48%',
-                                        padding: '10px',
-                                        backgroundColor: paymentMethod === 'cash' ? theme.palette.primary.main : '#f4f6f8',
-                                        color: paymentMethod === 'cash' ? 'white' : 'text.primary',
-                                        textAlign: 'center',
-                                        borderRadius: '8px',
-                                        cursor: 'pointer',
-                                        '&:hover': {
-                                            backgroundColor: paymentMethod !== 'cash' && '#e0e0e0',
-                                        },
-                                    } }
-                                    onClick={ () => setPaymentMethod('cash') }
-                                >
-                                    <Typography variant="h6" sx={ { fontSize: "15px" } }>Cash</Typography>
-                                    <Typography variant="body2" sx={ { fontSize: "10px" } }>Pay in cash at the appointment.</Typography>
-                                </Box>
-                            </Box>
-                        </Grid>
-                    </Grid>
-
-                    {/* Booking Summary */ }
-                    <Box sx={ { mb: 4, p: 3, bgcolor: '#f8fafc', borderRadius: 2 } }>
-                        <Typography variant="subtitle1" fontWeight={ 600 } gutterBottom>
-                            Appointment Summary
-                        </Typography>
-                        <Box sx={ { display: 'flex', justifyContent: 'space-between', mb: 1 } }>
-                            <Typography variant="body2">Service:</Typography>
-                            <Typography variant="body2">{ bookingData.service?.name }</Typography>
-                        </Box>
-                        <Box sx={ { display: 'flex', justifyContent: 'space-between', mb: 1 } }>
-                            <Typography variant="body2">Doctor:</Typography>
-                            <Typography variant="body2">
-                                { bookingData.appointment?.doctor.full_name }
-                            </Typography>
-                        </Box>
-                        <Box sx={ { display: 'flex', justifyContent: 'space-between', mb: 1 } }>
-                            <Typography variant="body2">Date & Time:</Typography>
-                            <Typography variant="body2">
-                                { formatDate(bookingData.appointment?.date) } at { bookingData.appointment?.startTime }
-                            </Typography>
-                        </Box>
-                        { insuranceResult && (
-                            <Box sx={ { display: 'flex', justifyContent: 'space-between', mb: 1 } }>
-                                <Typography variant="body2" color="success.main">Insurance Copay:</Typography>
-                                <Typography variant="body2" color="success.main">${ insuranceResult.copay_amount }</Typography>
-                            </Box>
-                        ) }
-                        <Divider sx={ { my: 2 } } />
-                        <Box sx={ { display: 'flex', justifyContent: 'space-between' } }>
-                            <Typography variant="h6" fontWeight={ 600 }>Total Amount:</Typography>
-                            <Typography variant="h6" fontWeight={ 600 }>${ totalAmount }</Typography>
-                        </Box>
-                    </Box>
-
-                    { error && (
-                        <Alert severity="error" sx={ { mb: 3 } }>
-                            { error }
-                        </Alert>
-                    ) }
-
-                    <Button
-                        variant="contained"
-                        size="large"
-                        disabled={ loading }
-                        fullWidth
-                        onClick={ paymentMethod === "card" ? handleCardPayment : handleCashBooking }
-                        sx={ { py: 1.5, color: "#fff" } }
-                    >
-                        { loading ? (
-                            <>
-                                <CircularProgress size={ 20 } sx={ { mr: 1, color: 'white' } } />
-                                Creating Appointment...
-                            </>
-                        ) : (
-                            `Confirm Booking ${paymentMethod === 'cash' ? '(Pay Later)' : `& Pay $${totalAmount}`}`
-                        ) }
-                    </Button>
-
-                    <Typography variant="caption" color="text.secondary" sx={ { display: 'block', textAlign: 'center', mt: 2 } }>
-                        Payment processed securely by Healthie using Stripe
-                    </Typography>
-                </CardContent>
-            </Card>
-        );
-    };
-
-    // Calculate total amount for payment
-    const totalAmount = insuranceResult
-        ? insuranceResult.copay_amount
-        : bookingData.service?.price || 75;
+    // Sub-step labels - only include insurance step for Ohio
+    const subStepLabels = isOhioLocation
+        ? ['Insurance Information', 'Payment Confirmation']
+        : ['Payment Confirmation'];
 
     return (
         <Box>
-            <Typography variant="h5" fontWeight={ 600 } color="text.primary" gutterBottom>
-                Payment & Information
-            </Typography>
-
-            {/* Sub-step indicator */ }
-            <Box sx={ { mb: 4 } }>
-                <Stepper activeStep={ currentSubStep } alternativeLabel sx={ {
-                    '& .css-1gi9ihl-MuiStepIcon-text': {
-                        fill: 'white',
-                    },
-                } }>
-                    { subStepLabels.map((label) => (
-                        <Step key={ label }>
-                            <StepLabel>{ label }</StepLabel>
-                        </Step>
-                    )) }
-                </Stepper>
-            </Box>
+            {/* Sub-step indicator - only show if Ohio */ }
+            { isOhioLocation && (
+                <Box sx={ { mb: 4 } }>
+                    <Stepper activeStep={ currentSubStep } alternativeLabel>
+                        { subStepLabels.map((label) => (
+                            <Step key={ label }>
+                                <StepLabel>{ label }</StepLabel>
+                            </Step>
+                        )) }
+                    </Stepper>
+                </Box>
+            ) }
 
             {/* Render current sub-step */ }
-            { currentSubStep === 0 && renderInsuranceStep() }
-            { currentSubStep === 1 && renderPatientStep() }
-            { currentSubStep === 2 && renderConfirmationStep() }
-
-            {/* Card Payment Dialog */ }
-            <Dialog
-                open={ showCardDialog }
-                onClose={ () => setShowCardDialog(false) }
-                maxWidth="sm"
-                fullWidth
-            >
-                <DialogTitle>
-                    <Box sx={ { display: 'flex', alignItems: 'center' } }>
-                        <CreditCard sx={ { mr: 1 } } />
-                        Secure Payment
-                    </Box>
-                </DialogTitle>
-                <DialogContent>
-                    <Elements stripe={ stripePromise }>
-                        <CardPaymentForm
-                            amount={ totalAmount }
-                            patientData={ patientData }
-                            bookingData={ bookingData }
-                            onSuccess={ handleCardPaymentSuccess }
-                            onCancel={ () => setShowCardDialog(false) }
-                        />
-                    </Elements>
-                </DialogContent>
-            </Dialog>
+            { currentSubStep === 0 && isOhioLocation ? renderInsuranceStep() : renderPaymentStep() }
         </Box>
     );
 };

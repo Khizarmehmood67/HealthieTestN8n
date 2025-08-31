@@ -4,10 +4,11 @@ import { useTheme } from '@mui/material';
 const StepIndicator = ({ currentStep }) => {
     const theme = useTheme();
     const steps = [
-        { number: 1, label: 'Location' },
-        { number: 2, label: 'Service' },
-        { number: 3, label: 'Doctor' },
-        { number: 4, label: 'Payment' },
+        { number: 1, label: 'Information' },
+        { number: 2, label: 'Location' },
+        { number: 3, label: 'Service' },
+        { number: 4, label: 'Availibilty' },
+        { number: 5, label: 'Payment' },
     ];
 
     return (

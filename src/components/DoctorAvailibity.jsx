@@ -1,282 +1,3 @@
-// src/components/DoctorAvailability.js
-import React, { useState, useEffect } from 'react';
-import {
-    Box,
-    Typography,
-    Grid,
-    Card,
-    CardContent,
-    Button,
-    Avatar,
-    Chip,
-    CircularProgress,
-    TextField,
-    Alert,
-    Divider
-} from '@mui/material';
-import { CalendarToday, AccessTime, Star } from '@mui/icons-material';
-import { useBooking } from '../contexts/BookingContext';
-import healthieAPI from '../services/healthieAPI';
-
-const DoctorAvailability = ({ onNext }) => {
-    const {
-        location,
-        service,
-        setDoctor,
-        setAppointmentSlot,
-        setLoading,
-        setError,
-        loading,
-        error
-    } = useBooking();
-
-    const [doctors, setDoctors] = useState([]);
-    const [selectedDoctor, setSelectedDoctor] = useState(null);
-    const [selectedDate, setSelectedDate] = useState('');
-    const [timeSlots, setTimeSlots] = useState([]);
-    const [selectedSlot, setSelectedSlot] = useState(null);
-    const [slotsLoading, setSlotsLoading] = useState(false);
-
-    const today = new Date().toISOString().split('T')[0];
-    const nextWeek = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-    useEffect(() => {
-        const fetchDoctors = async () => {
-            if (!location || !service) return;
-
-            setLoading(true);
-            try {
-                const data = await healthieAPI.getDoctors(location.id, service.id);
-                setDoctors(data);
-            } catch (err) {
-                setError('Failed to load doctors. Please try again.');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchDoctors();
-    }, [location, service, setLoading, setError]);
-
-    useEffect(() => {
-        if (selectedDoctor && selectedDate) {
-            fetchTimeSlots();
-        }
-    }, [selectedDoctor, selectedDate]);
-
-    const fetchTimeSlots = async () => {
-        setSlotsLoading(true);
-        try {
-            const data = await healthieAPI.getAvailableSlots(selectedDoctor.id, selectedDate);
-            setTimeSlots(data);
-        } catch (err) {
-            setError('Failed to load available times. Please try again.');
-        } finally {
-            setSlotsLoading(false);
-        }
-    };
-
-    const handleDoctorSelect = (doctor) => {
-        setSelectedDoctor(doctor);
-        setDoctor(doctor);
-        setSelectedSlot(null);
-        setTimeSlots([]);
-    };
-
-    const handleSlotSelect = (slot) => {
-        setSelectedSlot(slot);
-        const appointmentData = {
-            doctor: selectedDoctor,
-            date: selectedDate,
-            startTime: slot.startTime,
-            endTime: slot.endTime,
-            price: slot.price || service.price
-        };
-        setAppointmentSlot(appointmentData);
-    };
-
-    const handleNext = () => {
-        if (selectedDoctor && selectedDate && selectedSlot) {
-            onNext();
-        }
-    };
-
-    if (loading) {
-        return (
-            <Box sx={ { display: 'flex', justifyContent: 'center', py: 8 } }>
-                <CircularProgress size={ 40 } />
-            </Box>
-        );
-    }
-
-    if (error) {
-        return (
-            <Alert severity="error" sx={ { mb: 4 } }>
-                { error }
-            </Alert>
-        );
-    }
-
-    return (
-        <Box>
-            <Typography variant="h5" fontWeight={ 600 } color="text.primary" gutterBottom>
-                Step 3: Select Doctor & Time
-            </Typography>
-            <Typography variant="body1" color="text.secondary" sx={ { mb: 3 } }>
-                { service?.name } in { location?.name }
-            </Typography>
-
-            {/* Doctor Selection */ }
-            <Typography variant="h6" fontWeight={ 600 } color="text.primary" sx={ { mb: 2 } }>
-                Choose Your Doctor
-            </Typography>
-
-            <Grid container spacing={ 3 } sx={ { mb: 4 } }>
-                { doctors.map((doctor) => (
-                    <Grid item xs={ 12 } sm={ 6 } md={ 4 } key={ doctor.id }>
-                        <Card
-                            sx={ {
-                                cursor: 'pointer',
-                                border: selectedDoctor?.id === doctor.id ? '2px solid' : '1px solid #e5e7eb',
-                                borderColor: selectedDoctor?.id === doctor.id ? 'primary.main' : '#e5e7eb',
-                                bgcolor: selectedDoctor?.id === doctor.id ? 'primary.50' : 'white',
-                                transition: 'all 0.2s ease',
-                                '&:hover': {
-                                    borderColor: 'primary.main',
-                                    transform: 'translateY(-2px)',
-                                    boxShadow: (theme) => `0 8px 25px ${theme.palette.primary.main}25`,
-                                },
-                            } }
-                            onClick={ () => handleDoctorSelect(doctor) }
-                        >
-                            <CardContent sx={ { textAlign: 'center', p: 3 } }>
-                                <Avatar
-                                    sx={ {
-                                        width: 64,
-                                        height: 64,
-                                        mx: 'auto',
-                                        mb: 2,
-                                        bgcolor: 'primary.main',
-                                        fontSize: '1.5rem'
-                                    } }
-                                >
-                                    { doctor.firstName[0] }{ doctor.lastName[0] }
-                                </Avatar>
-                                <Typography variant="h6" fontWeight={ 600 } color="text.primary">
-                                    { doctor.firstName } { doctor.lastName }
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary" sx={ { mb: 1 } }>
-                                    { doctor.specialties.join(', ') }
-                                </Typography>
-                                <Box sx={ { display: 'flex', justifyContent: 'center', alignItems: 'center', mb: 1 } }>
-                                    <Star sx={ { fontSize: 16, color: '#ffc107', mr: 0.5 } } />
-                                    <Typography variant="body2" color="text.secondary">
-                                        { doctor.rating } • { doctor.experience }
-                                    </Typography>
-                                </Box>
-                                { doctor.bio && (
-                                    <Typography variant="caption" color="text.secondary" sx={ { fontSize: '0.75rem' } }>
-                                        { doctor.bio }
-                                    </Typography>
-                                ) }
-                            </CardContent>
-                        </Card>
-                    </Grid>
-                )) }
-            </Grid>
-
-            {/* Date & Time Selection */ }
-            { selectedDoctor && (
-                <Box>
-                    <Divider sx={ { mb: 3 } } />
-                    <Typography variant="h6" fontWeight={ 600 } color="text.primary" sx={ { mb: 2 } }>
-                        Select Date & Time
-                    </Typography>
-
-                    <Box sx={ { mb: 3 } }>
-                        <TextField
-                            type="date"
-                            label="Select Date"
-                            value={ selectedDate }
-                            onChange={ (e) => setSelectedDate(e.target.value) }
-                            InputLabelProps={ { shrink: true } }
-                            inputProps={ { min: today, max: nextWeek } }
-                            fullWidth
-                            sx={ { maxWidth: 300 } }
-                        />
-                    </Box>
-
-                    { selectedDate && (
-                        <Box>
-                            <Typography variant="subtitle1" fontWeight={ 500 } color="text.primary" sx={ { mb: 2 } }>
-                                Available Times for { new Date(selectedDate).toLocaleDateString('en-US', {
-                                    weekday: 'long',
-                                    year: 'numeric',
-                                    month: 'long',
-                                    day: 'numeric'
-                                }) }
-                            </Typography>
-
-                            { slotsLoading ? (
-                                <Box sx={ { display: 'flex', justifyContent: 'center', py: 4 } }>
-                                    <CircularProgress size={ 24 } />
-                                </Box>
-                            ) : timeSlots.length > 0 ? (
-                                <Grid container spacing={ 2 } sx={ { mb: 4 } }>
-                                    { timeSlots.map((slot, index) => (
-                                        <Grid item xs={ 6 } sm={ 4 } md={ 3 } key={ index }>
-                                            <Button
-                                                variant={ selectedSlot === slot ? "contained" : "outlined" }
-                                                fullWidth
-                                                disabled={ !slot.available }
-                                                onClick={ () => handleSlotSelect(slot) }
-                                                startIcon={ <AccessTime /> }
-                                                sx={ {
-                                                    py: 1.5,
-                                                    flexDirection: 'column',
-                                                    height: 'auto'
-                                                } }
-                                            >
-                                                <Typography variant="body2" fontWeight={ 600 }>
-                                                    { slot.startTime } - { slot.endTime }
-                                                </Typography>
-                                                { slot.price && (
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        ${ slot.price }
-                                                    </Typography>
-                                                ) }
-                                            </Button>
-                                        </Grid>
-                                    )) }
-                                </Grid>
-                            ) : (
-                                <Alert severity="info" sx={ { mb: 4 } }>
-                                    No available slots for this date. Please select another date.
-                                </Alert>
-                            ) }
-                        </Box>
-                    ) }
-                </Box>
-            ) }
-
-            <Box sx={ { display: 'flex', justifyContent: 'flex-end', mt: 4 } }>
-                <Button
-                    variant="contained"
-                    size="large"
-                    onClick={ handleNext }
-                    disabled={ !selectedDoctor || !selectedDate || !selectedSlot }
-                    sx={ { px: 4 } }
-                >
-                    Next Step
-                </Button>
-            </Box>
-        </Box>
-    );
-};
-
-export default DoctorAvailability;
-
-// src/components/PaymentFlow.js
 import React, { useState, useEffect } from 'react';
 import {
     Box,
@@ -301,6 +22,267 @@ import { useStripe, useElements, CardElement, CardNumberElement, CardExpiryEleme
 import { useBooking } from '../contexts/BookingContext';
 import stripeAPI from '../services/stripeAPI';
 import healthieAPI from '../services/healthieAPI';
+
+// const DoctorAvailability = ({ onNext }) => {
+//     const {
+//         location,
+//         service,
+//         setDoctor,
+//         setAppointmentSlot,
+//         setLoading,
+//         setError,
+//         loading,
+//         error
+//     } = useBooking();
+
+//     const [doctors, setDoctors] = useState([]);
+//     const [selectedDoctor, setSelectedDoctor] = useState(null);
+//     const [selectedDate, setSelectedDate] = useState('');
+//     const [timeSlots, setTimeSlots] = useState([]);
+//     const [selectedSlot, setSelectedSlot] = useState(null);
+//     const [slotsLoading, setSlotsLoading] = useState(false);
+
+//     const today = new Date().toISOString().split('T')[0];
+//     const nextWeek = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+//     useEffect(() => {
+//         const fetchDoctors = async () => {
+//             if (!location || !service) return;
+
+//             setLoading(true);
+//             try {
+//                 const data = await healthieAPI.getDoctors(location.id, service.id);
+//                 setDoctors(data);
+//             } catch (err) {
+//                 setError('Failed to load doctors. Please try again.');
+//             } finally {
+//                 setLoading(false);
+//             }
+//         };
+
+//         fetchDoctors();
+//     }, [location, service, setLoading, setError]);
+
+//     useEffect(() => {
+//         if (selectedDoctor && selectedDate) {
+//             fetchTimeSlots();
+//         }
+//     }, [selectedDoctor, selectedDate]);
+
+//     const fetchTimeSlots = async () => {
+//         setSlotsLoading(true);
+//         try {
+//             const data = await healthieAPI.getAvailableSlots(selectedDoctor.id, selectedDate);
+//             setTimeSlots(data);
+//         } catch (err) {
+//             setError('Failed to load available times. Please try again.');
+//         } finally {
+//             setSlotsLoading(false);
+//         }
+//     };
+
+//     const handleDoctorSelect = (doctor) => {
+//         setSelectedDoctor(doctor);
+//         setDoctor(doctor);
+//         setSelectedSlot(null);
+//         setTimeSlots([]);
+//     };
+
+//     const handleSlotSelect = (slot) => {
+//         setSelectedSlot(slot);
+//         const appointmentData = {
+//             doctor: selectedDoctor,
+//             date: selectedDate,
+//             startTime: slot.startTime,
+//             endTime: slot.endTime,
+//             price: slot.price || service.price
+//         };
+//         setAppointmentSlot(appointmentData);
+//     };
+
+//     const handleNext = () => {
+//         if (selectedDoctor && selectedDate && selectedSlot) {
+//             onNext();
+//         }
+//     };
+
+//     if (loading) {
+//         return (
+//             <Box sx={ { display: 'flex', justifyContent: 'center', py: 8 } }>
+//                 <CircularProgress size={ 40 } />
+//             </Box>
+//         );
+//     }
+
+//     if (error) {
+//         return (
+//             <Alert severity="error" sx={ { mb: 4 } }>
+//                 { error }
+//             </Alert>
+//         );
+//     }
+
+//     return (
+//         <Box>
+//             <Typography variant="h5" fontWeight={ 600 } color="text.primary" gutterBottom>
+//                 Step 3: Select Doctor & Time
+//             </Typography>
+//             <Typography variant="body1" color="text.secondary" sx={ { mb: 3 } }>
+//                 { service?.name } in { location?.name }
+//             </Typography>
+
+//             {/* Doctor Selection */ }
+//             <Typography variant="h6" fontWeight={ 600 } color="text.primary" sx={ { mb: 2 } }>
+//                 Choose Your Doctor
+//             </Typography>
+
+//             <Grid container spacing={ 3 } sx={ { mb: 4 } }>
+//                 { doctors.map((doctor) => (
+//                     <Grid item xs={ 12 } sm={ 6 } md={ 4 } key={ doctor.id }>
+//                         <Card
+//                             sx={ {
+//                                 cursor: 'pointer',
+//                                 border: selectedDoctor?.id === doctor.id ? '2px solid' : '1px solid #e5e7eb',
+//                                 borderColor: selectedDoctor?.id === doctor.id ? 'primary.main' : '#e5e7eb',
+//                                 bgcolor: selectedDoctor?.id === doctor.id ? 'primary.50' : 'white',
+//                                 transition: 'all 0.2s ease',
+//                                 '&:hover': {
+//                                     borderColor: 'primary.main',
+//                                     transform: 'translateY(-2px)',
+//                                     boxShadow: (theme) => `0 8px 25px ${theme.palette.primary.main}25`,
+//                                 },
+//                             } }
+//                             onClick={ () => handleDoctorSelect(doctor) }
+//                         >
+//                             <CardContent sx={ { textAlign: 'center', p: 3 } }>
+//                                 <Avatar
+//                                     sx={ {
+//                                         width: 64,
+//                                         height: 64,
+//                                         mx: 'auto',
+//                                         mb: 2,
+//                                         bgcolor: 'primary.main',
+//                                         fontSize: '1.5rem'
+//                                     } }
+//                                 >
+//                                     { doctor.firstName[0] }{ doctor.lastName[0] }
+//                                 </Avatar>
+//                                 <Typography variant="h6" fontWeight={ 600 } color="text.primary">
+//                                     { doctor.firstName } { doctor.lastName }
+//                                 </Typography>
+//                                 <Typography variant="body2" color="text.secondary" sx={ { mb: 1 } }>
+//                                     { doctor.specialties.join(', ') }
+//                                 </Typography>
+//                                 <Box sx={ { display: 'flex', justifyContent: 'center', alignItems: 'center', mb: 1 } }>
+//                                     <Star sx={ { fontSize: 16, color: '#ffc107', mr: 0.5 } } />
+//                                     <Typography variant="body2" color="text.secondary">
+//                                         { doctor.rating } • { doctor.experience }
+//                                     </Typography>
+//                                 </Box>
+//                                 { doctor.bio && (
+//                                     <Typography variant="caption" color="text.secondary" sx={ { fontSize: '0.75rem' } }>
+//                                         { doctor.bio }
+//                                     </Typography>
+//                                 ) }
+//                             </CardContent>
+//                         </Card>
+//                     </Grid>
+//                 )) }
+//             </Grid>
+
+//             {/* Date & Time Selection */ }
+//             { selectedDoctor && (
+//                 <Box>
+//                     <Divider sx={ { mb: 3 } } />
+//                     <Typography variant="h6" fontWeight={ 600 } color="text.primary" sx={ { mb: 2 } }>
+//                         Select Date & Time
+//                     </Typography>
+
+//                     <Box sx={ { mb: 3 } }>
+//                         <TextField
+//                             type="date"
+//                             label="Select Date"
+//                             value={ selectedDate }
+//                             onChange={ (e) => setSelectedDate(e.target.value) }
+//                             InputLabelProps={ { shrink: true } }
+//                             inputProps={ { min: today, max: nextWeek } }
+//                             fullWidth
+//                             sx={ { maxWidth: 300 } }
+//                         />
+//                     </Box>
+
+//                     { selectedDate && (
+//                         <Box>
+//                             <Typography variant="subtitle1" fontWeight={ 500 } color="text.primary" sx={ { mb: 2 } }>
+//                                 Available Times for { new Date(selectedDate).toLocaleDateString('en-US', {
+//                                     weekday: 'long',
+//                                     year: 'numeric',
+//                                     month: 'long',
+//                                     day: 'numeric'
+//                                 }) }
+//                             </Typography>
+
+//                             { slotsLoading ? (
+//                                 <Box sx={ { display: 'flex', justifyContent: 'center', py: 4 } }>
+//                                     <CircularProgress size={ 24 } />
+//                                 </Box>
+//                             ) : timeSlots.length > 0 ? (
+//                                 <Grid container spacing={ 2 } sx={ { mb: 4 } }>
+//                                     { timeSlots.map((slot, index) => (
+//                                         <Grid item xs={ 6 } sm={ 4 } md={ 3 } key={ index }>
+//                                             <Button
+//                                                 variant={ selectedSlot === slot ? "contained" : "outlined" }
+//                                                 fullWidth
+//                                                 disabled={ !slot.available }
+//                                                 onClick={ () => handleSlotSelect(slot) }
+//                                                 startIcon={ <AccessTime /> }
+//                                                 sx={ {
+//                                                     py: 1.5,
+//                                                     flexDirection: 'column',
+//                                                     height: 'auto'
+//                                                 } }
+//                                             >
+//                                                 <Typography variant="body2" fontWeight={ 600 }>
+//                                                     { slot.startTime } - { slot.endTime }
+//                                                 </Typography>
+//                                                 { slot.price && (
+//                                                     <Typography variant="caption" color="text.secondary">
+//                                                         ${ slot.price }
+//                                                     </Typography>
+//                                                 ) }
+//                                             </Button>
+//                                         </Grid>
+//                                     )) }
+//                                 </Grid>
+//                             ) : (
+//                                 <Alert severity="info" sx={ { mb: 4 } }>
+//                                     No available slots for this date. Please select another date.
+//                                 </Alert>
+//                             ) }
+//                         </Box>
+//                     ) }
+//                 </Box>
+//             ) }
+
+//             <Box sx={ { display: 'flex', justifyContent: 'flex-end', mt: 4 } }>
+//                 <Button
+//                     variant="contained"
+//                     size="large"
+//                     onClick={ handleNext }
+//                     disabled={ !selectedDoctor || !selectedDate || !selectedSlot }
+//                     sx={ { px: 4 } }
+//                 >
+//                     Next Step
+//                 </Button>
+//             </Box>
+//         </Box>
+//     );
+// };
+
+// export default DoctorAvailability;
+
+// src/components/PaymentFlow.js
+
 
 const PatientDetailsForm = ({ patientDetails, setPatientDetails, onNext }) => {
     const handleChange = (field, value) => {
