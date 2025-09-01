@@ -18,9 +18,7 @@ import {
 import healthieAPI from '../services/healthieAPI';
 
 // Initialize Stripe with Healthie's official keys
-const HEALTHIE_STRIPE_KEY = process.env.NODE_ENV === 'production'
-    ? 'pk_live_WzFpsrfurxhcz0HJspt9nbnn'  // Healthie Production key
-    : 'pk_test_fAj7WlTrG0uc5Z9WHKQDdoTq'; // Healthie Staging/Sandbox key
+const HEALTHIE_STRIPE_KEY = 'pk_test_fAj7WlTrG0uc5Z9WHKQDdoTq';
 
 const stripePromise = loadStripe(HEALTHIE_STRIPE_KEY);
 
