@@ -51,7 +51,7 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        if (!stripe || !elements || !cardholderName) {
+        if (!stripe || !elements) {
             onError('Please fill in all fields');
             return;
         }
@@ -84,50 +84,43 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
 
             if (isOhioLocation && insuranceData?.verified && insuranceData?.billingType === 'insurance') {
                 // Create CMS1500 claim for insurance billing
-                const cms1500Data = {
+                const variables = {
                     patient: {
                         id: client.id,
-                        first_name: bookingData.patient.firstName,
-                        last_name: bookingData.patient.lastName,
-                        email: bookingData.patient.email,
-                        phone_number: bookingData.patient.phone,
-                        // location: {
-                        //     line1: bookingData.patient.address1 || '',
-                        //     city: bookingData.patient.city || '',
-                        //     state: bookingData.patient.state || '',
-                        //     zip: bookingData.patient.zip || ''
-                        // }
+                        full_legal_name_with_preferred: `${bookingData.patient.firstName} ${bookingData.patient.lastName}`,
+                        location: {
+                            line1: bookingData.location.location || '',  // Ensure proper location fields
+                            city: bookingData.location.location || '',
+                            state: bookingData.patient.state || 'US',
+                            zip: bookingData.patient.zip || ''  // Include zip code
+                        },
                     },
                     dietitian: {
                         id: bookingData.appointment?.providerId,
-                        first_name: bookingData.appointment?.doctor?.first_name || '',
-                        last_name: bookingData.appointment?.doctor?.last_name || '',
-                        npi: bookingData.appointment?.doctor?.npi || ''
+                        qualifications: bookingData.appointment?.doctor?.qualifications || null,  // Include qualifications if available
                     },
-                    service_location_id: "2",
-                    amount_paid: '0.00', // Will be paid by insurance
-                    cms1500_policies: [{
-                        insurance_plan_id: insuranceData.planId,
-                        insurance_card_holder_id: insuranceData.memberId,
-                        insurance_card_group_number: insuranceData.groupNumber || '',
-                        rank: insuranceData.isPrimary ? 'primary' : 'secondary',
-                        relationship_to_card_holder: insuranceData.relationshipToInsured || 'self'
-                    }],
-                    icd_codes_cms1500s: bookingData.icdCodes || [
-                        { code: 'Z00.00', description: 'General examination' }
-                    ],
-                    cpt_codes_cms1500s: bookingData.cptCodes || [
+                    service_location_id: bookingData.location.id,  // Location ID (Service location)
+                    amount_paid: bookingData.service.price,  // Amount paid by insurance (or $0 if covered entirely)
+                    cms1500_policies: [
                         {
-                            code: '99213',
-                            description: 'Office visit, established patient',
-                            units: 1,
-                            fee: bookingData.service?.price?.toString() || '150.00'
+                            policy: {
+                                insurance_plan_id: insuranceData.planId,
+                                num: insuranceData.memberId,
+                                payer_location: {
+                                    state: "OH"
+                                },
+                                user_id: client.id,
+                                holder_relationship: insuranceData.relationshipToInsured || 'self',
+                                holder_dob: insuranceData.memberDob || "1998-3-22"
+                            }
                         }
                     ],
-                    client_sig_on_file: true
+                    icd_codes_cms1500s: bookingData.icdCodes || [],
+                    cpt_codes_cms1500s: bookingData.cptCodes || [],
+                    client_sig_on_file: true,
                 };
 
-                const cms1500Result = await healthieAPI.createCMS1500(cms1500Data);
+                const cms1500Result = await healthieAPI.createCMS1500(variables);
 
                 if (cms1500Result?.createCms1500?.cms1500) {
                     // If there's a copay, charge it
@@ -196,17 +189,8 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                     service_date: new Date(bookingData.appointment?.date).toISOString().split('T')[0],
                     amount_paid: totalAmount.toString(),
                     status: 'Not Sent',
-                    icd_codes_super_bills: bookingData.icdCodes || [
-                        { code: 'Z00.00', description: 'General examination' }
-                    ],
-                    cpt_codes_super_bills: bookingData.cptCodes || [
-                        {
-                            code: '99213',
-                            description: 'Office visit',
-                            units: 1,
-                            fee: totalAmount.toString()
-                        }
-                    ]
+                    icd_codes_super_bills: bookingData.icdCodes || [],
+                    cpt_codes_super_bills: bookingData.cptCodes || []
                 };
 
                 const superbillResult = await healthieAPI.createSuperbill(superbillData);
@@ -274,21 +258,20 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
         <Box component="form" onSubmit={ handleSubmit }>
             <Grid container spacing={ 2 }>
                 {/* Cardholder Name */ }
-                <Grid item size={ { xs: 12 } }>
-                    <TextField
-                        label="Cardholder Name"
-                        value={ cardholderName }
-                        onChange={ (e) => setCardholderName(e.target.value) }
-                        fullWidth
-                        required
-                        size="small"
-                        sx={ { mb: 1 } }
-                    />
-                </Grid>
 
                 {/* Only show card fields if payment is required */ }
                 { totalAmount > 0 && (
                     <>
+                        <Grid item size={ { xs: 12 } }>
+                            <TextField
+                                label="Cardholder Name"
+                                value={ cardholderName }
+                                onChange={ (e) => setCardholderName(e.target.value) }
+                                fullWidth
+                                size="small"
+                                sx={ { mb: 1 } }
+                            />
+                        </Grid>
                         {/* Card Number */ }
                         <Grid item size={ { xs: 12 } }>
                             <Typography variant="caption" color="textSecondary" sx={ { mb: 0.5, display: 'block' } }>
@@ -415,7 +398,7 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
 // Main PaymentFlow Component - Enhanced with Insurance
 const PaymentFlow = ({ bookingData, onComplete }) => {
     // Check if Ohio location for insurance
-    const isOhioLocation = bookingData.location?.code === "OH" || bookingData.location?.state === "OH";
+    const isOhioLocation = bookingData.location?.code === "OH" || bookingData.location?.location === "Ohio";
 
     const [currentSubStep, setCurrentSubStep] = useState(isOhioLocation ? 0 : 1);
     const [loading, setLoading] = useState(false);
@@ -476,8 +459,8 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                 setInsuranceData(prev => ({
                     ...prev,
                     verified: true,
-                    copayAmount: verificationResult.copay_amount || 25,
-                    coverageAmount: verificationResult.coverage_amount || (bookingData.service?.price - 25)
+                    copayAmount: verificationResult.copay_amount,
+                    coverageAmount: verificationResult.coverage_amount || (bookingData.service?.price)
                 }));
                 setCurrentSubStep(1);
             } else {
@@ -528,7 +511,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
             patient: bookingData.patient,
             appointment: bookingData.appointment,
             service: bookingData.service,
-            location: bookingData.location,
+            location: bookingData.location.location,
             payment: paymentData,
             insurance: insuranceData,
             confirmationCode: 'CONF' + Math.random().toString(36).substr(2, 9).toUpperCase()
@@ -541,7 +524,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                 payment: paymentData,
                 confirmation: appointmentData.confirmationCode
             });
-        }, 2000);
+        }, 5000);
     };
 
     const handlePaymentError = (errorMessage) => {
@@ -730,7 +713,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                         {/* Show insurance success if verified - only for Ohio */ }
                         { isOhioLocation && insuranceData.verified && insuranceData.billingType === 'insurance' && (
                             <Alert severity="success" sx={ { mb: 3 } }>
-                                Insurance verified! Your copay amount is ${ insuranceData.copayAmount }
+                                Insurance verified! Your copay amount is ${ bookingData.service.price }
                             </Alert>
                         ) }
 
@@ -755,7 +738,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                 { bookingData.appointment?.doctor && (
                                     <Grid item size={ { xs: 12, sm: 6 } }>
                                         <Typography variant="body2" color="textSecondary">Doctor:</Typography>
-                                        <Typography variant="body2" fontWeight={ 500 }>{ bookingData.appointment.doctor.full_name }</Typography>
+                                        <Typography variant="body2" fontWeight={ 500 }>{ bookingData.appointment.doctor }</Typography>
                                     </Grid>
                                 ) }
 
@@ -768,7 +751,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
 
                                 <Grid item size={ { xs: 12, sm: 6 } }>
                                     <Typography variant="body2" color="textSecondary">Location:</Typography>
-                                    <Typography variant="body2" fontWeight={ 500 }>{ bookingData.location?.name }</Typography>
+                                    <Typography variant="body2" fontWeight={ 500 }>{ bookingData.location?.location }</Typography>
                                 </Grid>
 
                                 <Grid item size={ { xs: 12, sm: 6 } }>
@@ -804,7 +787,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                     <Box sx={ { display: 'flex', justifyContent: 'space-between', mb: 1 } }>
                                         <Typography variant="body2" color="success.main">Insurance Coverage:</Typography>
                                         <Typography variant="body2" color="success.main">
-                                            -${ insuranceData.coverageAmount || ((bookingData.service?.price || 75) - insuranceData.copayAmount) }
+                                            -${ insuranceData.coverageAmount || (bookingData.service?.price) }
                                         </Typography>
                                     </Box>
                                     <Divider sx={ { my: 1 } } />

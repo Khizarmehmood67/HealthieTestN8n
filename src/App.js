@@ -26,7 +26,7 @@ const theme = createTheme({
 });
 
 const STEPS = {
-  Paient: 'patient',
+  Patient: 'patient',
   LOCATION: 'location',
   AVAILABILITY: 'availability',
   DOCTOR: 'doctor',
@@ -35,7 +35,7 @@ const STEPS = {
 };
 
 function App() {
-  const [currentStep, setCurrentStep] = useState(STEPS.Paient);
+  const [currentStep, setCurrentStep] = useState(STEPS.Patient);
   const [bookingData, setBookingData] = useState({
     location: null,
     service: null,
@@ -66,7 +66,7 @@ function App() {
   };
   const renderCurrentStep = () => {
     switch (currentStep) {
-      case STEPS.Paient:
+      case STEPS.Patient:
         return (
           <PatientForm
             onNext={ (info) => {
@@ -134,7 +134,7 @@ function App() {
             padding: '10px 24px',
             minHeight: '100vh'
           } }>
-            { currentStep === STEPS.LOCATION ? null : < IconButton onClick={ previousStep } disabled={ currentStep === STEPS.LOCATION }
+            { currentStep === (STEPS.Patient || STEPS.CONFIRMATION) ? null : < IconButton onClick={ previousStep } disabled={ currentStep === STEPS.Patient }
               sx={ { position: 'absolute', top: 20, left: 20 } } aria-label="back"
             >
               <ArrowBack />

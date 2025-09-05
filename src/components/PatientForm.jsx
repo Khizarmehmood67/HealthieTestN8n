@@ -14,10 +14,12 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import Radio from '@mui/material/Radio';
 import Button from '@mui/material/Button';
 import { useTheme } from '@mui/material';
+
 const PatientForm = ({
     onNext,
 }) => {
     const theme = useTheme();
+    const ZAPIER_WEBHOOK_URL = 'https://hooks.zapier.com/hooks/catch/24427250/uhlhnw3/'
     const [patientData, setPatientData] = useState({
         firstName: '',
         lastName: '',
@@ -26,9 +28,26 @@ const PatientForm = ({
         appointment_type_id: '',
         contact_type: 'In Person'
     });
-    const handlePatientSubmit = () => {
+    const handlePatientSubmit = async () => {
         if (patientData) {
             onNext(patientData)
+            const agentPayload = {
+                name: `${patientData.firstName} ${patientData.lastName}`,
+                firstName: patientData.firstName,
+                lastName: patientData.lastName,
+                phone: patientData.phone,
+                email: patientData.email,
+            };
+            const response = await fetch('https://hook.us2.make.com/93v973mmiqh1pg8l2p19rjkvbpka7cu2', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                mode: 'no-cors',
+                body: JSON.stringify(agentPayload)
+            });
+            console.log("response", response);
+
         }
     }
     return (

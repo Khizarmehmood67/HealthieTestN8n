@@ -380,6 +380,8 @@ query  {
           id
           insurance_plan {
             id
+              payer_name
+            is_accepted
           }
         }
         messages {
@@ -495,42 +497,15 @@ query  {
     }
   }
 
-  async getLocations({
-    has_name = false,
-    has_service_facilities = false,
-    keywords = '',
-    user_id = '',
-    offset = 0,
-    page_size = 10,
-    should_paginate = true,
-    after = null
-  }) {
+  async getLocations() {
     const query = `
-      query {
-  locations {
-    id
-    name
-    city
-    state
-  }
-}
-
+  query appointmentLocations($provider_id: ID) {\n  provider(id: $provider_id) {\n    id\n    appointment_setting {\n      id\n      user_id\n      __typename\n    }\n    can_edit_settings\n    appointment_locations {\n      location\n      clients_can_book\n      has_rooms\n      rooms {\n        id\n        name\n        limit_to_one\n        __typename\n      }\n      id\n      __typename\n    }\n    __typename\n  }\n}
     `;
 
-    const variables = {
-      has_name,
-      has_service_facilities,
-      keywords,
-      user_id,
-      offset,
-      page_size,
-      should_paginate,
-      after
-    };
 
     try {
       const response = await this.graphqlRequest(query);
-      return response.data.locations;
+      return response.data.provider.appointment_locations;
     } catch (error) {
       console.error('Failed to fetch locations:', error);
       // Fallback data in case of failure
@@ -829,215 +804,286 @@ query  {
 
   // Corrected HealthieAPI methods with proper GraphQL types
 
-  async getAvailabilities(locationId, appointmentTypeId, startDate, endDate, providerId = null, organizationId = '96198', additionalLocationIds = null) {
-    const query = `query calendarData(
-            $appointmentLocationId: ID, 
-            $appointmentTypeId: ID, 
-            $appointment_setting_updated_at: ISO8601DateTime, 
-            $availabilityAppointmentTypeIds: [ID], 
-            $colorCodeId: String, 
-            $contactTypeId: ID, 
-            $endDate: String, 
-            $filter_by_appointment_location_ids: [ID], 
-            $filter_by_appointment_statuses: [String], 
-            $filter_by_appointment_type_ids: [ID], 
-            $filter_by_client_confirmed: Boolean, 
-            $filter_by_contact_types: String, 
-            $filter_by_provider_confirmed: Boolean, 
-            $filter_synced_appointments: Boolean, 
-            $includeRepeating: Boolean, 
-            $include_nil_blockers: Boolean, 
-            $is_locations_resource: Boolean!, 
-            $is_org: Boolean, 
-            $is_repeating: Boolean, 
-            $known_requires_client_confirmed: Boolean, 
-            $locationIds: [ID], 
-            $one_time: Boolean, 
-            $provider_id: ID, 
-            $provider_ids: [ID], 
-            $show_appointments: Boolean, 
-            $show_availabilities: Boolean!, 
-            $show_availability: Boolean, 
-            $startDate: String, 
-            $tag_ids: [ID], 
-            $insurance_plan_ids: [ID], 
-            $timezone: String, 
-            $state_license: String, 
-            $organization_id: ID, 
-            $use_provider_inclusions: Boolean
+  // async getAvailabilities(locationId, appointmentTypeId, startDate, endDate, providerId = null, organizationId = '96198', additionalLocationIds = null) {
+  //   const query = `query calendarData(
+  //           $appointmentLocationId: ID, 
+  //           $appointmentTypeId: ID, 
+  //           $appointment_setting_updated_at: ISO8601DateTime, 
+  //           $availabilityAppointmentTypeIds: [ID], 
+  //           $colorCodeId: String, 
+  //           $contactTypeId: ID, 
+  //           $endDate: String, 
+  //           $filter_by_appointment_location_ids: [ID], 
+  //           $filter_by_appointment_statuses: [String], 
+  //           $filter_by_appointment_type_ids: [ID], 
+  //           $filter_by_client_confirmed: Boolean, 
+  //           $filter_by_contact_types: String, 
+  //           $filter_by_provider_confirmed: Boolean, 
+  //           $filter_synced_appointments: Boolean, 
+  //           $includeRepeating: Boolean, 
+  //           $include_nil_blockers: Boolean, 
+  //           $is_locations_resource: Boolean!, 
+  //           $is_org: Boolean, 
+  //           $is_repeating: Boolean, 
+  //           $known_requires_client_confirmed: Boolean, 
+  //           $locationIds: [ID], 
+  //           $one_time: Boolean, 
+  //           $provider_id: ID, 
+  //           $provider_ids: [ID], 
+  //           $show_appointments: Boolean, 
+  //           $show_availabilities: Boolean!, 
+  //           $show_availability: Boolean, 
+  //           $startDate: String, 
+  //           $tag_ids: [ID], 
+  //           $insurance_plan_ids: [ID], 
+  //           $timezone: String, 
+  //           $state_license: String, 
+  //           $organization_id: ID, 
+  //           $use_provider_inclusions: Boolean
+  //       ) {
+  //           availabilities(
+  //               appointment_location_id: $appointmentLocationId
+  //               appointment_type_id: $appointmentTypeId
+  //               appointment_type_ids: $availabilityAppointmentTypeIds
+  //               contact_type_id: $contactTypeId
+  //               endDate: $endDate
+  //               includeRepeating: $includeRepeating
+  //               is_org: $is_org
+  //               is_repeating: $is_repeating
+  //               one_time: $one_time
+  //               provider_id: $provider_id
+  //               provider_ids: $provider_ids
+  //               show_availability: $show_availability
+  //               include_suborganizations: false
+  //               startDate: $startDate
+  //               timezone: $timezone
+  //               state_license: $state_license
+  //               tag_ids: $tag_ids
+  //               insurance_plan_ids: $insurance_plan_ids
+  //               organization_id: $organization_id
+  //           ) @include(if: $show_availabilities) {
+  //               appointment_location_id
+  //               appointment_type_id
+  //               contact_type_id
+  //               day_of_week
+  //               end_on
+  //               id
+  //               is_repeating
+  //               origin_start_date
+  //               range_end
+  //               range_start
+  //               repeating_availability_id
+  //               resourceId
+  //               timezone_abbr
+  //               user_id
+  //           }
+
+  //           appointments(
+  //               colorSchemeId: $colorCodeId
+  //               endDate: $endDate
+  //               filter_by_appointment_location_ids: $filter_by_appointment_location_ids
+  //               filter_by_appointment_statuses: $filter_by_appointment_statuses
+  //               filter_by_appointment_type_ids: $filter_by_appointment_type_ids
+  //               filter_by_client_confirmed: $filter_by_client_confirmed
+  //               filter_by_contact_types: $filter_by_contact_types
+  //               filter_by_provider_confirmed: $filter_by_provider_confirmed
+  //               filter_synced_appointments: $filter_synced_appointments
+  //               include_nil_blockers: $include_nil_blockers
+  //               is_org: $is_org
+  //               provider_id: $provider_id
+  //               provider_ids: $provider_ids
+  //               show_appointments: $show_appointments
+  //               startDate: $startDate
+  //               state_license: $state_license
+  //               tag_ids: $tag_ids
+  //               insurance_plan_ids: $insurance_plan_ids
+  //               organization_id: $organization_id
+  //               use_provider_inclusions: $use_provider_inclusions
+  //           ) {
+  //               appointment_category
+  //               appointment_type_id
+  //               backgroundColor(appointment_setting_updated_at: $appointment_setting_updated_at)
+  //               client_confirmed(known_requires_client_confirmed: $known_requires_client_confirmed)
+  //               confirmed
+  //               contact_type
+  //               default_color
+  //               end
+  //               external_id_type
+  //               id
+  //               is_blocker
+  //               locationResource @include(if: $is_locations_resource)
+  //               pm_status
+  //               provider {
+  //                   full_name
+  //                   id
+  //               }
+  //               providers(empty_unless_multiple: true) {
+  //                   full_name
+  //                   id
+  //               }
+  //               recurring_appointment {
+  //                   id
+  //               }
+  //               resourceId
+  //               start
+  //               timezone_abbr
+  //               title
+  //           }
+
+  //           locationResources: locationResources(location_ids: $locationIds) {
+  //               resourceId
+  //               resourceTitle
+  //           }
+  //       }
+  //   `;
+
+  //   // Prepare location IDs array (NOT a string)
+  //   let locationIdsArray = [];
+  //   if (locationId) {
+  //     locationIdsArray.push(locationId.toString());
+  //   }
+  //   if (additionalLocationIds && Array.isArray(additionalLocationIds)) {
+  //     locationIdsArray = locationIdsArray.concat(additionalLocationIds.map(id => id.toString()));
+  //   }
+
+  //   const variables = {
+  //     // Date parameters
+  //     startDate: startDate,
+  //     endDate: endDate,
+
+  //     // Location and appointment type - ID types
+  //     appointmentLocationId: locationId?.toString() || null,
+  //     appointmentTypeId: appointmentTypeId?.toString() || null,
+  //     availabilityAppointmentTypeIds: appointmentTypeId ? [appointmentTypeId.toString()] : [],
+
+  //     // Contact type - ID type
+  //     contactTypeId: null,
+
+  //     // Provider IDs
+  //     provider_id: providerId?.toString() || null,
+  //     provider_ids: providerId ? [providerId.toString()] : null,
+
+  //     // Organization settings
+  //     organization_id: '96198' || null,
+  //     is_org: true,
+
+  //     // Show flags
+  //     show_availabilities: true,
+  //     show_availability: true,
+  //     show_appointments: true,
+
+  //     // Repeating settings
+  //     includeRepeating: true,
+  //     is_repeating: true,
+  //     one_time: true,
+
+  //     // Location resources - Array of IDs
+  //     locationIds: locationIdsArray.length > 0 ? locationIdsArray : null,
+  //     is_locations_resource: false,
+
+  //     // Additional settings
+  //     timezone: "Asia/Yekaterinburg",
+  //     known_requires_client_confirmed: false,
+  //     appointment_setting_updated_at: "2025-08-25T15:45:51-06:00", // ISO8601 format
+  //     include_nil_blockers: true,
+  //     state_license: "none_selected",
+
+  //     // Filter settings
+  //     filter_by_appointment_location_ids: locationId ? [locationId.toString()] : [],
+  //     filter_by_appointment_statuses: [],
+  //     filter_by_appointment_type_ids: [],
+  //     filter_by_contact_types: null,
+  //     filter_synced_appointments: false,
+  //     filter_by_provider_confirmed: null,
+  //     filter_by_client_confirmed: null,
+  //     use_provider_inclusions: true,
+
+  //     // Optional fields
+  //     colorCodeId: null,
+  //     tag_ids: [],
+  //     insurance_plan_ids: []
+  //   };
+
+  //   try {
+  //     const result = await this.graphqlRequest(query, variables);
+  //     console.log('Calendar data received:', {
+  //       availabilities: result.data?.availabilities?.length || 0,
+  //       appointments: result.data?.appointments?.length || 0
+  //     });
+  //     return result.data;
+  //   } catch (error) {
+  //     console.error('Error in getAvailabilities:', error);
+  //     throw error;
+  //   }
+  // }
+
+  async getAvailabilities(locationId, appointmentTypeId, startDate, endDate, providerId = null) {
+    const query = `
+      query availabilities(
+     $user_id: ID, 
+        $endDate: String, 
+        $startDate: String, 
+        $one_time: Boolean, 
+        $is_repeating: Boolean, 
+        $contact_type_id: ID,
+        $includeRepeating: Boolean, 
+        $appointment_type_id: ID, 
+        $appointment_location_id: ID, 
+        $timezone: String
+      ) {
+        availabilities(
+          user_id: $user_id
+          endDate: $endDate
+          one_time: $one_time
+          startDate: $startDate
+          is_repeating: $is_repeating
+          contact_type_id: $contact_type_id
+          includeRepeating: $includeRepeating
+          appointment_type_id: $appointment_type_id
+          appointment_location_id: $appointment_location_id
+          timezone: $timezone
         ) {
-            availabilities(
-                appointment_location_id: $appointmentLocationId
-                appointment_type_id: $appointmentTypeId
-                appointment_type_ids: $availabilityAppointmentTypeIds
-                contact_type_id: $contactTypeId
-                endDate: $endDate
-                includeRepeating: $includeRepeating
-                is_org: $is_org
-                is_repeating: $is_repeating
-                one_time: $one_time
-                provider_id: $provider_id
-                provider_ids: $provider_ids
-                show_availability: $show_availability
-                include_suborganizations: false
-                startDate: $startDate
-                timezone: $timezone
-                state_license: $state_license
-                tag_ids: $tag_ids
-                insurance_plan_ids: $insurance_plan_ids
-                organization_id: $organization_id
-            ) @include(if: $show_availabilities) {
-                appointment_location_id
-                appointment_type_id
-                contact_type_id
-                day_of_week
-                end_on
-                id
-                is_repeating
-                origin_start_date
-                range_end
-                range_start
-                repeating_availability_id
-                resourceId
-                timezone_abbr
-                user_id
-            }
-            
-            appointments(
-                colorSchemeId: $colorCodeId
-                endDate: $endDate
-                filter_by_appointment_location_ids: $filter_by_appointment_location_ids
-                filter_by_appointment_statuses: $filter_by_appointment_statuses
-                filter_by_appointment_type_ids: $filter_by_appointment_type_ids
-                filter_by_client_confirmed: $filter_by_client_confirmed
-                filter_by_contact_types: $filter_by_contact_types
-                filter_by_provider_confirmed: $filter_by_provider_confirmed
-                filter_synced_appointments: $filter_synced_appointments
-                include_nil_blockers: $include_nil_blockers
-                is_org: $is_org
-                provider_id: $provider_id
-                provider_ids: $provider_ids
-                show_appointments: $show_appointments
-                startDate: $startDate
-                state_license: $state_license
-                tag_ids: $tag_ids
-                insurance_plan_ids: $insurance_plan_ids
-                organization_id: $organization_id
-                use_provider_inclusions: $use_provider_inclusions
-            ) {
-                appointment_category
-                appointment_type_id
-                backgroundColor(appointment_setting_updated_at: $appointment_setting_updated_at)
-                client_confirmed(known_requires_client_confirmed: $known_requires_client_confirmed)
-                confirmed
-                contact_type
-                default_color
-                end
-                external_id_type
-                id
-                is_blocker
-                locationResource @include(if: $is_locations_resource)
-                pm_status
-                provider {
-                    full_name
-                    id
-                }
-                providers(empty_unless_multiple: true) {
-                    full_name
-                    id
-                }
-                recurring_appointment {
-                    id
-                }
-                resourceId
-                start
-                timezone_abbr
-                title
-            }
-            
-            locationResources: locationResources(location_ids: $locationIds) {
-                resourceId
-                resourceTitle
-            }
+          id
+          user_id
+          range_end
+          resourceId
+          range_start
+          day_of_week
+          end_on
+          user {
+  id,
+  name
+}
+          is_repeating
+          timezone_abbr
+          contact_type_id
+          origin_start_date
+          appointment_type_id
+          appointment_location_id
+          repeating_availability_id
         }
+      }
     `;
 
-    // Prepare location IDs array (NOT a string)
-    let locationIdsArray = [];
-    if (locationId) {
-      locationIdsArray.push(locationId.toString());
-    }
-    if (additionalLocationIds && Array.isArray(additionalLocationIds)) {
-      locationIdsArray = locationIdsArray.concat(additionalLocationIds.map(id => id.toString()));
-    }
-
     const variables = {
-      // Date parameters
+      user_id: providerId?.toString() || null,
+      appointment_location_id: locationId?.toString() || null,
+      appointment_type_id: appointmentTypeId?.toString() || null,
       startDate: startDate,
       endDate: endDate,
-
-      // Location and appointment type - ID types
-      appointmentLocationId: locationId?.toString() || null,
-      appointmentTypeId: appointmentTypeId?.toString() || null,
-      availabilityAppointmentTypeIds: appointmentTypeId ? [appointmentTypeId.toString()] : [],
-
-      // Contact type - ID type
-      contactTypeId: null,
-
-      // Provider IDs
-      provider_id: providerId?.toString() || null,
-      provider_ids: providerId ? [providerId.toString()] : null,
-
-      // Organization settings
-      organization_id: '96198' || null,
-      is_org: true,
-
-      // Show flags
-      show_availabilities: true,
-      show_availability: true,
-      show_appointments: true,
-
-      // Repeating settings
-      includeRepeating: true,
-      is_repeating: true,
-      one_time: true,
-
-      // Location resources - Array of IDs
-      locationIds: locationIdsArray.length > 0 ? locationIdsArray : null,
-      is_locations_resource: false,
-
-      // Additional settings
       timezone: "Asia/Yekaterinburg",
-      known_requires_client_confirmed: false,
-      appointment_setting_updated_at: "2025-08-25T15:45:51-06:00", // ISO8601 format
-      include_nil_blockers: true,
-      state_license: "none_selected",
-
-      // Filter settings
-      filter_by_appointment_location_ids: locationId ? [locationId.toString()] : [],
-      filter_by_appointment_statuses: [],
-      filter_by_appointment_type_ids: [],
-      filter_by_contact_types: null,
-      filter_synced_appointments: false,
-      filter_by_provider_confirmed: null,
-      filter_by_client_confirmed: null,
-      use_provider_inclusions: true,
-
-      // Optional fields
-      colorCodeId: null,
-      tag_ids: [],
-      insurance_plan_ids: []
+      one_time: true,
+      is_repeating: true,
+      includeRepeating: true,
+      contact_type_id: null
     };
 
     try {
       const result = await this.graphqlRequest(query, variables);
-      console.log('Calendar data received:', {
-        availabilities: result.data?.availabilities?.length || 0,
-        appointments: result.data?.appointments?.length || 0
-      });
-      return result.data;
+      console.log('Availabilities received:', result.data?.availabilities?.length || 0);
+      return result.data.availabilities;
     } catch (error) {
-      console.error('Error in getAvailabilities:', error);
+      console.error('Error fetching availabilities:', error);
       throw error;
     }
   }
@@ -1466,7 +1512,7 @@ query  {
   /**
    * Create a CMS1500 insurance claim
    */
-  async createCMS1500(cms1500Data) {
+  async createCMS1500(variables) {
     const mutation = `
         mutation createCms1500(
             $patient: PatientInput
@@ -1507,7 +1553,7 @@ query  {
         }
     `;
 
-    return await this.graphqlRequest(mutation, cms1500Data);
+    return await this.graphqlRequest(mutation, variables);
   }
 
   /**

@@ -42,7 +42,7 @@ const BookingConfirmation = ({ bookingData }) => {
                             <Box>
                                 <Typography variant="body2" color="#5f6368">Doctor</Typography>
                                 <Typography variant="body1" fontWeight={ 500 }>
-                                    { bookingData.appointment?.doctor?.full_name }
+                                    { bookingData.appointment?.doctor }
                                 </Typography>
                             </Box>
                         </Box>
@@ -62,7 +62,7 @@ const BookingConfirmation = ({ bookingData }) => {
                             <Box>
                                 <Typography variant="body2" color="#5f6368">Service & Location</Typography>
                                 <Typography variant="body1" fontWeight={ 500 }>
-                                    { bookingData.service?.name } in { bookingData.location?.name }
+                                    { bookingData.service?.name } in { bookingData.location?.location }
                                 </Typography>
                             </Box>
                         </Box>
@@ -75,7 +75,6 @@ const BookingConfirmation = ({ bookingData }) => {
                                     <Typography variant="body1" fontWeight={ 500 }>
                                         ${ bookingData.payment?.amount || bookingData.service?.price }
                                     </Typography>
-                                    <Chip label="Pending" sx={ { ml: 7, color: "#fff" } } color="primary" />
                                 </Box>
                             </Box>
                         </Box>

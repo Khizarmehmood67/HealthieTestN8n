@@ -30,47 +30,57 @@ const DoctorSelector = ({ location, service, onNext }) => {
     useEffect(() => {
         if (location && service) {
             fetchDoctors();
-            // Fetch availabilities for any provider by default
-            fetchAvailabilities();
+            fetchAllData();
         }
-    }, [location, service]);
+    }, []);
 
-    // Refetch availabilities when week, provider mode, or selected doctor changes
+    // Refetch data when week, provider mode, or selected doctor changes
     useEffect(() => {
         if (location && service) {
-            fetchAvailabilities();
+            fetchAllData();
         }
     }, [currentWeek, providerMode, selectedDoctor]);
+    console.log("availabilities", availabilities);
 
-    const fetchAvailabilities = async () => {
+    const fetchAllData = async () => {
         setLoading(true);
         try {
-            const startDate = startOfDay(weekDays[0]);
-            const endDate = endOfDay(weekDays[weekDays.length - 1]);
+            const startDate = startOfDay(weekDays[0]).toISOString();
+            const endDate = endOfDay(weekDays[weekDays.length - 1]).toISOString();
+            const providerId = providerMode === 'specific' && selectedDoctor ? selectedDoctor.id : null;
 
-            console.log('Fetching availabilities:', {
-                mode: providerMode,
-                doctorId: providerMode === 'specific' ? selectedDoctor?.id : null,
-                startDate: startDate.toISOString(),
-                endDate: endDate.toISOString()
-            });
-
-            const data = await healthieAPI.getAvailabilities(
+            // Fetch availabilities
+            const availData = await healthieAPI.getAvailabilities(
                 location.id,
                 service.id,
-                startDate.toISOString(),
-                endDate.toISOString(),
-                providerMode === 'specific' && selectedDoctor ? selectedDoctor.id : null
+                startDate,
+                endDate,
+                providerId
             );
 
-            if (data) {
-                setAvailabilities(data.availabilities || []);
-                setAppointments(data.appointments || []);
-                processAvailabilitiesIntoSlots(data.availabilities || [], data.appointments || []);
+            // Fetch appointments separately
+            // const apptData = await healthieAPI.getAppointments(
+            //     location.id,
+            //     startDate,
+            //     endDate,
+            //     providerId
+            // );
+            console.log("res", availData);
+
+            if (availData) {
+                setAvailabilities(availData);
+                // setAppointments(apptData?.appointments || []);
+                processAvailabilitiesIntoSlots(
+                    availData || [],
+
+                );
             }
         } catch (error) {
-            console.error('Failed to fetch availabilities:', error);
-            generateMockTimeSlots();
+            console.error('Failed to fetch data:', error);
+            // Clear slots on error
+            setTimeSlotsByDay({});
+            setAvailabilities([]);
+            setAppointments([]);
         } finally {
             setLoading(false);
         }
@@ -86,14 +96,16 @@ const DoctorSelector = ({ location, service, onNext }) => {
         }
     };
 
-    const processAvailabilitiesIntoSlots = (avails, apts) => {
+    const processAvailabilitiesIntoSlots = (avails) => {
         const slotsByDay = {};
 
+        // Initialize all days
         weekDays.forEach(day => {
             const dayKey = format(day, 'yyyy-MM-dd');
             slotsByDay[dayKey] = [];
         });
 
+        // Process each availability
         avails.forEach(avail => {
             if (!avail.range_start || !avail.range_end) return;
 
@@ -105,103 +117,54 @@ const DoctorSelector = ({ location, service, onNext }) => {
 
             let slotStart = new Date(availStart);
 
+            // Generate 15-minute slots
             while (slotStart < availEnd && slotsByDay[dayKey].length < 20) {
                 const slotEnd = new Date(slotStart);
-                slotEnd.setMinutes(slotEnd.getMinutes() + 15);
+                slotEnd.setMinutes(slotEnd.getMinutes() + 30);
 
                 if (slotEnd > availEnd) break;
 
-                const isBooked = apts.some(apt => {
-                    if (!apt.start || !apt.end) return false;
-                    const aptStart = new Date(apt.start);
-                    const aptEnd = new Date(apt.end);
-                    return (
-                        (slotStart >= aptStart && slotStart < aptEnd) ||
-                        (slotEnd > aptStart && slotEnd <= aptEnd) ||
-                        (slotStart <= aptStart && slotEnd >= aptEnd) ||
-                        (aptStart <= slotStart && aptEnd >= slotEnd)
-                    );
+                // Add the slot
+                slotsByDay[dayKey].push({
+                    id: `${avail.id}-${slotStart.toISOString()}`,
+                    time: format(slotStart, 'h:mm a'),
+                    datetime: slotStart.toISOString(),
+                    available: true,
+                    providerId: avail.user_id,
+                    availabilityId: avail.id,
+                    fullAvailability: avail // Pass the full availability object
                 });
-
-                const isBlocker = apts.some(apt => {
-                    if (!apt.is_blocker || !apt.start || !apt.end) return false;
-                    const aptStart = new Date(apt.start);
-                    const aptEnd = new Date(apt.end);
-                    return slotStart >= aptStart && slotStart < aptEnd;
-                });
-
-                if (!isBooked && !isBlocker) {
-                    slotsByDay[dayKey].push({
-                        id: `${avail.id}-${slotStart.toISOString()}`,
-                        time: format(slotStart, 'h:mm a'),
-                        datetime: slotStart.toISOString(),
-                        available: true,
-                        providerId: avail.user_id,
-                        availabilityId: avail.id
-                    });
-                }
 
                 slotStart = new Date(slotEnd);
             }
         });
 
+        // Sort slots by time
         Object.keys(slotsByDay).forEach(dayKey => {
             slotsByDay[dayKey].sort((a, b) =>
                 new Date(a.datetime) - new Date(b.datetime)
             );
         });
 
-        console.log('Processed slots:', Object.keys(slotsByDay).map(key => ({
-            day: key,
-            count: slotsByDay[key].length
-        })));
+        console.log("slots", slotsByDay);
 
+        // Update the state with the processed slots
         setTimeSlotsByDay(slotsByDay);
     };
 
-    const generateMockTimeSlots = () => {
-        const mockSlots = {};
-        const mockTimes = [
-            '9:00 AM', '9:15 AM', '9:30 AM', '9:45 AM',
-            '10:00 AM', '10:15 AM', '10:30 AM', '10:45 AM',
-            '11:00 AM', '11:15 AM', '11:30 AM', '11:45 AM',
-            '2:00 PM', '2:15 PM', '2:30 PM', '2:45 PM',
-            '3:00 PM', '3:15 PM', '3:30 PM', '3:45 PM'
-        ];
 
-        weekDays.forEach(day => {
-            const dayKey = format(day, 'yyyy-MM-dd');
-            const numSlots = Math.floor(Math.random() * 6) + 5;
-            const selectedTimes = mockTimes
-                .sort(() => Math.random() - 0.5)
-                .slice(0, numSlots)
-                .sort();
+    const handleSlotSelect = (slot) => {
+        setSelectedSlot(slot);
 
-            mockSlots[dayKey] = selectedTimes.map((time, index) => ({
-                id: `mock-${dayKey}-${index}`,
-                time: time,
-                datetime: new Date(`${dayKey}T${convertTo24Hour(time)}`).toISOString(),
-                available: true,
-                providerId: 'mock-provider'
-            }));
-        });
-
-        setTimeSlotsByDay(mockSlots);
-    };
-
-    const convertTo24Hour = (time12h) => {
-        const [time, modifier] = time12h.split(' ');
-        let [hours, minutes] = time.split(':');
-        hours = parseInt(hours, 10);
-
-        if (modifier === 'PM' && hours !== 12) {
-            hours = hours + 12;
-        }
-        if (modifier === 'AM' && hours === 12) {
-            hours = 0;
+        // Pass the full availability object when a slot is selected
+        if (providerMode === 'any' && slot.providerId) {
+            const provider = doctors.find(d => d.id === slot.providerId);
+            if (provider) {
+                setSelectedDoctor(provider);
+            }
         }
 
-        return `${hours.toString().padStart(2, '0')}:${minutes}:00`;
+        // onNext(appointmentData);
     };
 
     const handleProviderModeChange = (event, newMode) => {
@@ -216,24 +179,11 @@ const DoctorSelector = ({ location, service, onNext }) => {
 
     const handleDoctorSelect = (doctor) => {
         if (selectedDoctor?.id === doctor.id) {
-            // Deselect if clicking the same doctor
             setSelectedDoctor(null);
         } else {
             setSelectedDoctor(doctor);
         }
         setSelectedSlot(null);
-    };
-
-    const handleSlotSelect = (slot) => {
-        setSelectedSlot(slot);
-
-        // If in "any provider" mode and slot has a provider, auto-select that provider
-        if (providerMode === 'any' && slot.providerId) {
-            const provider = doctors.find(d => d.id === slot.providerId);
-            if (provider) {
-                setSelectedDoctor(provider);
-            }
-        }
     };
 
     const handleNext = () => {
@@ -244,7 +194,8 @@ const DoctorSelector = ({ location, service, onNext }) => {
                 startTime: selectedSlot.time,
                 slotId: selectedSlot.id,
                 availabilityId: selectedSlot.availabilityId,
-                providerId: selectedSlot.providerId
+                providerId: selectedSlot.providerId,
+                doctor: selectedSlot.fullAvailability.user.name
             };
             onNext(appointmentData);
         }
@@ -302,7 +253,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
                 ) }
             </Box>
 
-            {/* Doctor Selection (shown when specific provider mode is selected) */ }
+            {/* Doctor Selection */ }
             { providerMode === 'specific' && (
                 <Box sx={ { mb: 3 } }>
                     <Typography variant="subtitle2" fontWeight={ 500 } sx={ { mb: 2 } }>
@@ -310,7 +261,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
                     </Typography>
                     <Grid container spacing={ 1.5 }>
                         { doctors.map((doctor) => (
-                            <Grid item size={ { xs: 6, sm: 4, md: 3 } } key={ doctor.id }>
+                            <Grid item xs={ 6 } sm={ 4 } md={ 3 } size={ { xs: 6, sm: 4, md: 3 } } key={ doctor.id }>
                                 <Card
                                     sx={ {
                                         cursor: 'pointer',
@@ -352,13 +303,6 @@ const DoctorSelector = ({ location, service, onNext }) => {
                 </Box>
             ) }
 
-            {/* Timezone Display */ }
-            <Box sx={ { mb: 2, display: 'flex', justifyContent: 'center' } }>
-                <Typography variant="caption" color="textSecondary" sx={ { fontWeight: 500 } }>
-                    TIME ZONE: Russia - Yekaterinburg (GMT+05:00)
-                </Typography>
-            </Box>
-
             {/* Calendar View */ }
             { loading ? (
                 <Box sx={ { display: 'flex', justifyContent: 'center', py: 8 } }>
@@ -367,26 +311,24 @@ const DoctorSelector = ({ location, service, onNext }) => {
             ) : (
                 <Paper elevation={ 0 } sx={ { border: '1px solid #e0e0e0', borderRadius: '8px', overflow: 'hidden' } }>
                     {/* Week Navigation */ }
-                    <Box sx={ {
-                        display: 'flex',
-                        alignItems: 'center',
-                        backgroundColor: '#f8f9fa',
-                        borderBottom: '1px solid #e0e0e0'
-                    } }>
-                        <IconButton onClick={ () => navigateWeek(-1) } size="small">
+                    <Box sx={ { display: 'flex', alignItems: 'center', backgroundColor: '#f8f9fa', borderBottom: '1px solid #e0e0e0', position: "relative" } }>
+                        <IconButton onClick={ () => navigateWeek(-1) } size="small" sx={ { position: "absolute" } }>
                             <ChevronLeft />
                         </IconButton>
 
                         <Grid container sx={ { flex: 1 } }>
                             { weekDays.map((day, index) => (
-                                <Grid item size={ { xs: 12 / 7 } } key={ day.toISOString() }>
-                                    <Box sx={ {
-                                        textAlign: 'center',
-                                        py: { xs: 1, sm: 2 },
-                                        borderRight: index < weekDays.length - 1 ? '1px solid #e0e0e0' : 'none',
-                                        backgroundColor: isSameDay(day, new Date()) ? '#e8f4fd' : 'transparent'
-                                    } }>
-                                        <Typography variant="caption" color="textSecondary" sx={ { display: { xs: 'none', sm: 'block' }, mb: 0.5 } }>
+                                <Grid item size={ { xs: 3, md: 1.7 } } key={ day.toISOString() }>
+                                    <Box
+                                        sx={ {
+                                            textAlign: 'center',
+                                            py: { xs: 1, sm: 2 },
+                                            mr: "-1px",
+                                            borderRight: index < weekDays.length - 1 ? '1px solid #e0e0e0' : 'none',
+                                            backgroundColor: isSameDay(day, new Date()) ? '#e8f4fd' : 'transparent'
+                                        } }
+                                    >
+                                        <Typography variant="caption" color="textSecondary" sx={ { display: { xs: 'none', sm: 'block' }, } }>
                                             { index === Math.floor(weekDays.length / 2) ? getWeeksFromNow() : '\u00A0' }
                                         </Typography>
                                         <Typography variant="subtitle2" fontWeight={ 600 } sx={ { fontSize: { xs: '0.7rem', sm: '0.875rem' } } }>
@@ -400,12 +342,12 @@ const DoctorSelector = ({ location, service, onNext }) => {
                             )) }
                         </Grid>
 
-                        <IconButton onClick={ () => navigateWeek(1) } size="small">
+                        <IconButton onClick={ () => navigateWeek(1) } size="small" sx={ { position: "absolute", right: 0 } }>
                             <ChevronRight />
                         </IconButton>
                     </Box>
 
-                    {/* Time Slots Grid - Mobile Responsive */ }
+                    {/* Time Slots Grid */ }
                     <Box sx={ { minHeight: { xs: '300px', sm: '400px' }, overflowX: { xs: 'auto', md: 'hidden' } } }>
                         <Box sx={ { display: 'flex', minWidth: { xs: '700px', md: 'auto' } } }>
                             { weekDays.map((day, dayIndex) => {
@@ -420,7 +362,8 @@ const DoctorSelector = ({ location, service, onNext }) => {
                                             flex: 1,
                                             borderRight: dayIndex < weekDays.length - 1 ? '1px solid #e0e0e0' : 'none',
                                             backgroundColor: isPastDay ? '#fafafa' : 'white',
-                                            minWidth: { xs: '100px', sm: 'auto' }
+                                            minWidth: { xs: '100px', sm: 'auto' },
+                                            minHeight: { xs: 'auto', md: '400px' }
                                         } }
                                     >
                                         <Box sx={ { p: { xs: 0.5, sm: 1 }, maxHeight: { xs: '300px', sm: '400px' }, overflowY: 'auto' } }>
@@ -453,9 +396,9 @@ const DoctorSelector = ({ location, service, onNext }) => {
                                                             fontSize: { xs: '0.65rem', sm: '0.75rem' },
                                                             fontWeight: 400,
                                                             minWidth: 0,
+                                                            color: "#000",
                                                             borderColor: selectedSlot?.id === slot.id ? theme.palette.primary.main : '#e0e0e0',
                                                             backgroundColor: selectedSlot?.id === slot.id ? theme.palette.primary.light : 'white',
-                                                            color: selectedSlot?.id === slot.id ? theme.palette.primary.main : '#333',
                                                             '&:hover': {
                                                                 borderColor: theme.palette.primary.main,
                                                                 backgroundColor: '#f0f7ff'

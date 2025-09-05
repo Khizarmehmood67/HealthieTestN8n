@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, use } from 'react';
 import { Box, Typography, Grid, Card, CardContent, Button, TextField, MenuItem, Autocomplete } from '@mui/material';
 import { LocationOn } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
 import US_STATES from '../data/UsStates';  // Your states array
-
+import healthieAPI from '../services/healthieAPI';
 const LocationSelector = ({ onNext }) => {
     const [selectedLocation, setSelectedLocation] = useState(null);
+    const [Locations, setLocations] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const theme = useTheme();
@@ -14,6 +15,23 @@ const LocationSelector = ({ onNext }) => {
     const handleSelect = (event, newValue) => {
         setSelectedLocation(newValue);
     };
+
+    useEffect(() => {
+        const fetchLocations = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const locations = await healthieAPI.getLocations();
+                setLocations(locations);
+            } catch (err) {
+                setError('Failed to fetch locations. Please try again later.');
+                console.error(err);
+            }
+            setLoading(false);
+        }
+        fetchLocations();
+    }, []);
+
 
     const handleNext = () => {
         if (selectedLocation) {
@@ -51,8 +69,8 @@ const LocationSelector = ({ onNext }) => {
             <Autocomplete
                 value={ selectedLocation }
                 onChange={ handleSelect }
-                options={ US_STATES } // The array of US states with codes
-                getOptionLabel={ (option) => `${option.name}, ${option.code}` } // Display name and code
+                options={ Locations } // The array of US states with codes
+                getOptionLabel={ (option) => `${option.location}` } // Display name and code
                 renderInput={ (params) => (
                     <TextField
                         { ...params }
@@ -64,9 +82,9 @@ const LocationSelector = ({ onNext }) => {
                 ) }
                 isOptionEqualToValue={ (option, value) => option.code === value.code } // Check if selected option matches
                 renderOption={ (props, option) => (
-                    <MenuItem { ...props } key={ option.code }>
+                    <MenuItem { ...props } key={ option.id }>
                         <LocationOn sx={ { mr: 1 } } />
-                        { option.name } ({ option.code })
+                        { option.location }
                     </MenuItem>
                 ) }
             />
