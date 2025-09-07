@@ -46,7 +46,6 @@ const PatientForm = ({
                 mode: 'no-cors',
                 body: JSON.stringify(agentPayload)
             });
-            console.log("response", response);
 
         }
     }

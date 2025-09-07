@@ -55,7 +55,6 @@ const ServiceSelector = ({ location, onNext }) => {
     if (error) {
         return <Typography>Error: { error }</Typography>;
     }
-    console.log(services);
 
     return (
         <Box sx={ { py: 4 } }>

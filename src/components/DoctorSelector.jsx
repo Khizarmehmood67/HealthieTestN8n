@@ -40,7 +40,6 @@ const DoctorSelector = ({ location, service, onNext }) => {
             fetchAllData();
         }
     }, [currentWeek, providerMode, selectedDoctor]);
-    console.log("availabilities", availabilities);
 
     const fetchAllData = async () => {
         setLoading(true);
@@ -65,7 +64,6 @@ const DoctorSelector = ({ location, service, onNext }) => {
             //     endDate,
             //     providerId
             // );
-            console.log("res", availData);
 
             if (availData) {
                 setAvailabilities(availData);
@@ -89,7 +87,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
     const fetchDoctors = async () => {
         try {
             const doctorsData = await healthieAPI.getProviders(location.id, service.id);
-            setDoctors(doctorsData || []);
+            setDoctors(doctorsData.organizationMembers || []);
         } catch (error) {
             console.error('Failed to fetch doctors:', error);
             setDoctors([]);
@@ -146,7 +144,6 @@ const DoctorSelector = ({ location, service, onNext }) => {
             );
         });
 
-        console.log("slots", slotsByDay);
 
         // Update the state with the processed slots
         setTimeSlotsByDay(slotsByDay);
@@ -277,7 +274,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
                                 >
                                     <CardContent sx={ { p: 1.5, textAlign: 'center' } }>
                                         <Avatar
-                                            src={ doctor.avatar_url }
+                                            src={ "/assets/doctor-avatar.jpg" }
                                             sx={ {
                                                 width: 40,
                                                 height: 40,
@@ -287,7 +284,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
                                                 fontSize: '1rem'
                                             } }
                                         >
-                                            { doctor.full_name?.charAt(0) }
+
                                         </Avatar>
                                         <Typography variant="body2" fontWeight={ 500 } sx={ { fontSize: '0.875rem' } }>
                                             { doctor.full_name }
@@ -318,7 +315,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
 
                         <Grid container sx={ { flex: 1 } }>
                             { weekDays.map((day, index) => (
-                                <Grid item size={ { xs: 3, md: 1.7 } } key={ day.toISOString() }>
+                                <Grid item size={ { xs: 3, md: 1.714 } } key={ day.toISOString() }>
                                     <Box
                                         sx={ {
                                             textAlign: 'center',

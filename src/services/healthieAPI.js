@@ -85,22 +85,57 @@ query  {
   // Get providers by location and service
   async getProviders(locationId, serviceId) {
     const query = `
-      query  {
-   referringPhysicians{
+   query organizationMembers(
+  $conversation_id: ID
+  $keywords: String
+  $licensed_in_state: String
+  $order_by: UserOrderKeys
+  $offset: Int
+  $page_size: Int
+) {
+  organizationMembers(
+    conversation_id: $conversation_id
+    keywords: $keywords
+    licensed_in_state: $licensed_in_state
+    order_by: $order_by
+    offset: $offset
+    page_size: $page_size
+  ) {
     id,
     full_name,
-    speciality,
-    location_id,
-    accepts_insurance,
-    phone_number,
-    
-  }
-}
+    locations{
+      id,
+      name
+    },
+    specialties {
+      id,
+      specialty
+    },
+    place_of_service{
+      id,
+      name
+    },
+    qualifications,
+      qualifications,
+    location{
+      id,
+      name
+    },
+    appointment_locations{
+      id,
+      location
+    },
+    policies{
+      id,
+      name
+    },
+    stripe_id
+  }}
     `;
 
     try {
-      const response = await this.graphqlRequest(query, { locationId, serviceId });
-      return response.data.referringPhysicians;
+      const response = await this.graphqlRequest(query);
+      return response.data;
     } catch (error) {
       console.error('Failed to fetch providers:', error);
 
@@ -282,7 +317,7 @@ query  {
       user_id: clientData.user_id,  // Get the client ID from the created client
       appointment_type_id: clientData.appointment_type_id, // Use selected appointment type ID
       contact_type: clientData.contact_type, // Use selected contact type (e.g., "video_call")
-      other_party_id: clientData.doctor_id, // Provider ID (doctor’s ID)
+      other_party_id: clientData.other_party_id, // Provider ID (doctor’s ID)
       datetime: clientData.datetime, // Date and time of the appointment
     };
 
@@ -371,7 +406,6 @@ query  {
 
   // Verify insurance through Healthie
   async verifyInsurance({ insurancePlanIds }) {
-    console.log("insurancePlanIds", insurancePlanIds);
 
     const mutation = `
     mutation createAcceptedInsurancePlan($insurance_plan_ids: [ID]) {
@@ -1080,7 +1114,6 @@ query  {
 
     try {
       const result = await this.graphqlRequest(query, variables);
-      console.log('Availabilities received:', result.data?.availabilities?.length || 0);
       return result.data.availabilities;
     } catch (error) {
       console.error('Error fetching availabilities:', error);
@@ -1088,94 +1121,94 @@ query  {
     }
   }
 
-  // CORRECTED getProviders method - using 'provider' (singular) not 'providers'
-  async getProviders(locationId, serviceId) {
-    // First, try to get multiple providers using users query
-    const query = `
-        query getUsers(
-            $keywords: String,
-            $location_id: ID,
-            $appointment_type_id: ID,
-            $page_size: Int,
-            $offset: Int
-        ) {
-            users(
-                keywords: $keywords,
-                location_id: $location_id,
-                appointment_type_id: $appointment_type_id,
-                page_size: $page_size,
-                offset: $offset,
-                include_suborganizations: false
-            ) {
-                id
-                full_name
-                first_name
-                last_name
-                email
-                phone_number
-                speciality
-                years_of_experience
-                rating
-                bio
-                avatar_url
-                is_provider
-                active
-            }
-        }
-    `;
+  // // CORRECTED getProviders method - using 'provider' (singular) not 'providers'
+  // async getProviders(locationId, serviceId) {
+  //   // First, try to get multiple providers using users query
+  //   const query = `
+  //       query getUsers(
+  //           $keywords: String,
+  //           $location_id: ID,
+  //           $appointment_type_id: ID,
+  //           $page_size: Int,
+  //           $offset: Int
+  //       ) {
+  //           users(
+  //               keywords: $keywords,
+  //               location_id: $location_id,
+  //               appointment_type_id: $appointment_type_id,
+  //               page_size: $page_size,
+  //               offset: $offset,
+  //               include_suborganizations: false
+  //           ) {
+  //               id
+  //               full_name
+  //               first_name
+  //               last_name
+  //               email
+  //               phone_number
+  //               speciality
+  //               years_of_experience
+  //               rating
+  //               bio
+  //               avatar_url
+  //               is_provider
+  //               active
+  //           }
+  //       }
+  //   `;
 
-    const variables = {
-      location_id: locationId?.toString() || null,
-      appointment_type_id: serviceId?.toString() || null,
-      keywords: null,
-      page_size: 50,
-      offset: 0
-    };
+  //   const variables = {
+  //     location_id: locationId?.toString() || null,
+  //     appointment_type_id: serviceId?.toString() || null,
+  //     keywords: null,
+  //     page_size: 50,
+  //     offset: 0
+  //   };
 
-    try {
-      const result = await this.graphqlRequest(query, variables);
-      // Filter to only return providers
-      const providers = (result.data?.users || []).filter(user =>
-        user.is_provider !== false && user.active !== false
-      );
+  //   try {
+  //     const result = await this.graphqlRequest(query, variables);
+  //     // Filter to only return providers
+  //     const providers = (result.data?.users || []).filter(user =>
+  //       user.is_provider !== false && user.active !== false
+  //     );
 
-      console.log(`Found ${providers.length} providers for location ${locationId} and service ${serviceId}`);
-      return providers;
-    } catch (error) {
-      console.error('Failed to fetch providers:', error);
+  //     console.log(`Found ${providers.length} providers for location ${locationId} and service ${serviceId}`);
+  //     return providers;
+  //   } catch (error) {
+  //     console.error('Failed to fetch providers:', error);
 
-      // Fallback: try alternate query structure if available
-      try {
-        const alternateQuery = `
-                query getReferringPhysicians {
-                    referringPhysicians {
-                        id
-                        full_name
-                        speciality
-                        location_id
-                        accepts_insurance
-                        phone_number
-                    }
-                }
-            `;
+  //     // Fallback: try alternate query structure if available
+  //     try {
+  //       const alternateQuery = `
+  //               query getReferringPhysicians {
+  //                   referringPhysicians {
+  //                       id
+  //                       full_name
+  //                       speciality
+  //                       location_id
+  //                       accepts_insurance
+  //                       phone_number
+  //                   }
+  //               }
+  //           `;
 
-        const alternateResult = await this.graphqlRequest(alternateQuery);
-        const physicians = alternateResult.data?.referringPhysicians || [];
+  //       const alternateResult = await this.graphqlRequest(alternateQuery);
+  //       const physicians = alternateResult.data?.referringPhysicians || [];
 
-        // Filter by location if provided
-        if (locationId) {
-          return physicians.filter(p =>
-            !p.location_id || p.location_id === locationId.toString()
-          );
-        }
+  //       // Filter by location if provided
+  //       if (locationId) {
+  //         return physicians.filter(p =>
+  //           !p.location_id || p.location_id === locationId.toString()
+  //         );
+  //       }
 
-        return physicians;
-      } catch (alternateError) {
-        console.error('Alternate provider fetch also failed:', alternateError);
-        return [];
-      }
-    }
-  }
+  //       return physicians;
+  //     } catch (alternateError) {
+  //       console.error('Alternate provider fetch also failed:', alternateError);
+  //       return [];
+  //     }
+  //   }
+  // }
 
   // Alternative: Get a single provider by ID
   async getProvider(providerId) {
@@ -1386,45 +1419,210 @@ query  {
    */
   async createSuperbill(superbillData) {
     const mutation = `
-            mutation createSuperBill(
-                $patient_id: ID,
-                $patient_dob: String,
-                $dietitian_id: ID,
-                $provider_name: String,
-                $service_date: String,
-                $amount_paid: String,
-                $status: String,
-                $icd_codes_super_bills: [IcdCodesSuperBillInput],
-                $cpt_codes_super_bills: [CptCodesSuperBillInput],
-                $receipt_line_items: [ReceiptLineItemInput]
-            ) {
-                createSuperBill(input: {
-                    patient_id: $patient_id,
-                    patient_dob: $patient_dob,
-                    dietitian_id: $dietitian_id,
-                    provider_name: $provider_name,
-                    service_date: $service_date,
-                    amount_paid: $amount_paid,
-                    status: $status,
-                    icd_codes_super_bills: $icd_codes_super_bills,
-                    cpt_codes_super_bills: $cpt_codes_super_bills,
-                    receipt_line_items: $receipt_line_items
-                }) {
-                    superBill {
-                        id
-                      provider_name
-                      patient_name
-                      amount_paid
-                        status
-                        total_fee
-                        balance_due
-                    }
-                    messages {
-                        field
-                        message
-                    }
-                }
-            }
+          mutation createSuperBill(
+      $status: String
+      $patient_id: ID
+      $patient_name: String
+      $dietitian_id: ID
+      $service_date: ISO8601DateTime
+      $referrer_npi: String
+      $referrer_name: String
+      $patient_dob: String
+      $patient_phone: String
+      $tax_id: ID
+      $npi: String
+      $license_num: String
+      $provider_name: String
+      $address: String
+      $amount_paid: String
+      $prov_line1: String
+      $prov_line2: String
+      $prov_city: String
+      $prov_email: String
+      $prov_zip: String
+      $prov_state: String
+      $prov_phone: String
+      $place_of_service_id: ID
+      $location_id: ID
+      $location: LocationInputs
+      $patient_location: PatientLocationInputs
+      $icd_codes_super_bills: [IcdCodesSuperBillInput]
+      $cpt_codes_super_bills: [CptCodesSuperBillInput]
+      $receipt_line_items: [ReceiptLineItemInput]
+    ) {
+      createSuperBill(
+        input: {
+          status: $status
+          patient_id: $patient_id
+          patient_name: $patient_name
+          dietitian_id: $dietitian_id
+          service_date: $service_date
+          referrer_npi: $referrer_npi
+          referrer_name: $referrer_name
+          patient_dob: $patient_dob
+          patient_phone: $patient_phone
+          tax_id: $tax_id
+          npi: $npi
+          license_num: $license_num
+          provider_name: $provider_name
+          address: $address
+          amount_paid: $amount_paid
+          prov_line1: $prov_line1
+          prov_line2: $prov_line2
+          prov_city: $prov_city
+          prov_email: $prov_email
+          prov_zip: $prov_zip
+          prov_state: $prov_state
+          prov_phone: $prov_phone
+          place_of_service_id: $place_of_service_id
+          location_id: $location_id
+          location: $location
+          patient_location: $patient_location
+          icd_codes_super_bills: $icd_codes_super_bills
+          cpt_codes_super_bills: $cpt_codes_super_bills
+          receipt_line_items: $receipt_line_items
+        }
+      ) {
+        newSuperBill: superBill {
+          ...SuperBillFragment
+          __typename
+        }
+        messages {
+          field
+          message
+          __typename
+        }
+        __typename
+      }
+    }
+
+    fragment SuperBillFragment on SuperBill {
+      id
+      created_at
+      status
+      patient_id
+      patient_name
+      dietitian_id
+      service_date
+      referrer_name
+      referrer_npi
+      patient_dob
+      patient_phone
+      tax_id
+      npi
+      license_num
+      provider_name
+      address
+      amount_paid
+      prov_email
+      prov_phone
+      place_of_service_id
+      location_id
+      patient_location_id
+      total_fee
+      balance_due
+      cpt_code_names
+      patient {
+        id
+        full_name
+        full_legal_name
+        first_name
+        last_name
+        phone_number
+        full_legal_name_with_preferred
+        avatar_url
+        email
+        __typename
+      }
+      provider {
+        id
+        qualifications
+        brand {
+          brand_name
+          logo_url
+          __typename
+        }
+        __typename
+      }
+      location {
+        id
+        name
+        line1
+        line2
+        city
+        state
+        zip
+        __typename
+      }
+      patient_location {
+        id
+        name
+        line1
+        line2
+        city
+        state
+        zip
+        __typename
+      }
+      place_of_service {
+        code_name
+        id
+        __typename
+      }
+      receipt_line_items {
+        ...ReceiptLineItemFragment
+        __typename
+      }
+      cpt_codes_super_bills {
+        ...CptCodesSuperBillFragment
+        __typename
+      }
+      icd_codes_super_bills {
+        ...IcdCodesSuperBillFragment
+        __typename
+      }
+      __typename
+    }
+
+    fragment ReceiptLineItemFragment on ReceiptLineItem {
+      description
+      previous_price
+      created_at
+      id
+      price
+      __typename
+    }
+
+    fragment CptCodesSuperBillFragment on CptCodesSuperBill {
+      fee
+      units
+      cpt_code_id
+      service_date
+      mod1
+      mod2
+      mod3
+      mod4
+      pointers
+      cpt_code {
+        id
+        code
+        description
+        __typename
+      }
+      __typename
+    }
+
+    fragment IcdCodesSuperBillFragment on IcdCodesSuperBill {
+      id
+      icd_code_id
+      icd_code {
+        code
+        description
+        id
+        __typename
+      }
+      __typename
+    }
         `;
 
     return await this.graphqlRequest(mutation, superbillData);

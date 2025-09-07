@@ -3,9 +3,10 @@ import {
     Box, Typography, Card, CardContent, Button, Grid,
     Alert, CircularProgress, Divider, useTheme, TextField,
     FormControlLabel, Checkbox, MenuItem, Stepper, Step, StepLabel,
-    RadioGroup, Radio
+    RadioGroup, Radio,
+    InputLabel
 } from '@mui/material';
-import { CreditCard, Lock, Security, HealthAndSafety } from '@mui/icons-material';
+import { CreditCard, Lock, Security, HealthAndSafety, Label } from '@mui/icons-material';
 import { loadStripe } from '@stripe/stripe-js';
 import {
     Elements,
@@ -111,7 +112,7 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                                 },
                                 user_id: client.id,
                                 holder_relationship: insuranceData.relationshipToInsured || 'self',
-                                holder_dob: insuranceData.memberDob || "1998-3-22"
+                                holder_dob: insuranceData.m_dob || "1998-3-22"
                             }
                         }
                     ],
@@ -183,14 +184,30 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                 // Create superbill for reimbursement
                 const superbillData = {
                     patient_id: client.id,
-                    patient_dob: bookingData.patient.dateOfBirth,
+                    patient_name: client.name || '', // Add patient_name if needed
+                    patient_dob: insuranceData.m_dob || "2001-09-10",
                     dietitian_id: bookingData.appointment?.providerId,
-                    provider_name: bookingData.appointment?.doctor?.full_name || '',
+                    provider_name: bookingData.appointment?.doctor || '',
+                    referrer_npi: null,
                     service_date: new Date(bookingData.appointment?.date).toISOString().split('T')[0],
                     amount_paid: totalAmount.toString(),
                     status: 'Not Sent',
                     icd_codes_super_bills: bookingData.icdCodes || [],
-                    cpt_codes_super_bills: bookingData.cptCodes || []
+                    cpt_codes_super_bills: bookingData.cptCodes || [],
+                    location: {
+                        id: bookingData.location.id, line1: bookingData.location.location || "",
+                        state: bookingData.location.location || ""
+                    },
+                    patient_location: {
+                        country: "US",
+                        line1: bookingData.location.location || "",
+                        state: bookingData.location.location || ""
+                    }, // Add patient_location if needed
+                    prov_email: "", // Add prov_email if needed
+                    prov_phone: "", // Add prov_phone if needed
+                    tax_id: "", // Add tax_id if needed
+                    npi: "", // Add npi if needed
+                    license_num: "", // Add license_num if needed
                 };
 
                 const superbillResult = await healthieAPI.createSuperbill(superbillData);
@@ -415,11 +432,11 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         requestSuperbill: false,
         verified: false,
         copayAmount: null,
-        coverageAmount: null
+        coverageAmount: null,
+        m_dob: null
     });
     const [insurancePlans, setInsurancePlans] = useState([]);
     const theme = useTheme();
-    console.log("insuranceData", insuranceData);
 
     useEffect(() => {
         if (bookingData.patient?.insurance && isOhioLocation) {
@@ -623,6 +640,20 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                         <MenuItem value="other">Other</MenuItem>
                                     </TextField>
                                 </Grid>
+                                <Grid item size={ { xs: 12, md: 6 } } sx={ { alignContent: "center" } }>
+                                    <InputLabel>Member Date of Birth:</InputLabel>
+                                </Grid>
+                                <Grid item size={ { xs: 12, md: 6 } }>
+                                    <TextField
+                                        // label="Member Date of Birth"
+                                        type='date'
+                                        placeholder='Date of Birth'
+                                        value={ insuranceData.m_dob }
+                                        onChange={ (e) => setInsuranceData(prev => ({ ...prev, m_dob: e.target.value })) }
+                                        fullWidth
+                                        size="small"
+                                    />
+                                </Grid>
 
                                 <Grid item xs={ 12 }>
                                     <Typography variant="subtitle2" fontWeight={ 600 }>Billing Preference</Typography>
@@ -672,7 +703,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                                 Verifying Insurance...
                                             </>
                                         ) : (
-                                            'Verify Insurance & Continue'
+                                            'Apply for Insurance & Continue'
                                         ) }
                                     </Button>
                                 </Grid>
