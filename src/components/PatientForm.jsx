@@ -38,7 +38,7 @@ const PatientForm = ({
                 phone: patientData.phone,
                 email: patientData.email,
             };
-            const response = await fetch('https://hook.us2.make.com/93v973mmiqh1pg8l2p19rjkvbpka7cu2', {
+            const response = await fetch('https://edmedsai.app.n8n.cloud/webhook-test/94e99ec8-d834-4693-b5e0-cc389db9fa4f', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

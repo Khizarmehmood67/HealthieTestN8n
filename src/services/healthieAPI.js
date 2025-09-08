@@ -329,7 +329,7 @@ query  {
       if (response.data.createAppointment.appointment) {
         return response.data.createAppointment.appointment;
       } else {
-        throw new Error('Failed to create appointment');
+        throw new Error("'Failed to create appointment'");
       }
     } catch (error) {
       console.error('Error creating appointment:', error);

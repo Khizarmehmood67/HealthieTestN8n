@@ -24,7 +24,7 @@ const HEALTHIE_STRIPE_KEY = 'pk_test_fAj7WlTrG0uc5Z9WHKQDdoTq';
 const stripePromise = loadStripe(HEALTHIE_STRIPE_KEY);
 
 // Card Payment Form Component - Enhanced for Insurance
-const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocation, onSuccess, onError }) => {
+const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocation, onSuccess, onError, appointment_type }) => {
     const stripe = useStripe();
     const elements = useElements();
     const [processing, setProcessing] = useState(false);
@@ -77,7 +77,7 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
             let billingResult = null;
             let appointmentData = {
                 user_id: client.id,
-                appointment_type_id: bookingData.service?.id,
+                appointment_type_id: appointment_type[0]?.id || null,
                 contact_type: bookingData.patient.contact_type || 'In Person',
                 other_party_id: bookingData.appointment?.providerId,
                 datetime: bookingData.appointment?.date
@@ -420,6 +420,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
     const [currentSubStep, setCurrentSubStep] = useState(isOhioLocation ? 0 : 1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [appointment_type, setAppointmenttype] = useState([]);
     const [paymentSuccess, setPaymentSuccess] = useState(false);
     const [insuranceData, setInsuranceData] = useState({
         hasInsurance: false,
@@ -450,6 +451,18 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
             fetchInsurancePlans();
         }
     }, [bookingData]);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const appointmentTypes = await healthieAPI.getAppointmentTypes();
+                setAppointmenttype(appointmentTypes)
+            } catch (error) {
+                console.error('Error fetching appointment types:', error);
+                // Handle error as needed
+            }
+        })();
+    }, []);
 
     const fetchInsurancePlans = async () => {
         try {
@@ -855,6 +868,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                     isOhioLocation={ isOhioLocation }
                                     onSuccess={ handlePaymentSuccess }
                                     onError={ handlePaymentError }
+                                    appointment_type={ appointment_type }
                                 />
                             </Elements>
                         </Box>

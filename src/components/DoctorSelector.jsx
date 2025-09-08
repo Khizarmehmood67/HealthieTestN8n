@@ -105,7 +105,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
 
         // Process each availability
         avails.forEach(avail => {
-            if (!avail.range_start || !avail.range_end) return;
+            if (!avail.range_start || !avail.range_end || avail.is_repeating) return;
 
             const availStart = new Date(avail.range_start);
             const availEnd = new Date(avail.range_end);
@@ -115,7 +115,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
 
             let slotStart = new Date(availStart);
 
-            // Generate 15-minute slots
+            // Generate 15-minute slots (though your code generates 30-minute slots)
             while (slotStart < availEnd && slotsByDay[dayKey].length < 20) {
                 const slotEnd = new Date(slotStart);
                 slotEnd.setMinutes(slotEnd.getMinutes() + 30);
@@ -130,7 +130,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
                     available: true,
                     providerId: avail.user_id,
                     availabilityId: avail.id,
-                    fullAvailability: avail // Pass the full availability object
+                    fullAvailability: avail
                 });
 
                 slotStart = new Date(slotEnd);
@@ -144,10 +144,9 @@ const DoctorSelector = ({ location, service, onNext }) => {
             );
         });
 
-
         // Update the state with the processed slots
         setTimeSlotsByDay(slotsByDay);
-    };
+    };;
 
 
     const handleSlotSelect = (slot) => {
