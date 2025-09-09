@@ -540,7 +540,7 @@ query  {
 
 
     try {
-      const response = await this.graphqlRequest(query);
+      const response = await this.graphqlRequest(query, { provider_id: 9589558 });
       return response.data.provider.appointment_locations;
     } catch (error) {
       console.error('Failed to fetch locations:', error);
