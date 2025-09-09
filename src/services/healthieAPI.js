@@ -1,7 +1,7 @@
 class HealthieAPI {
   constructor () {
-    this.baseURL = process.env.REACT_APP_HEALTHIE_BASE_URL;
-    this.apiKey = process.env.REACT_APP_HEALTHIE_TOKEN;
+    this.baseURL = '/api/healthie';
+    // this.apiKey = process.env.REACT_APP_HEALTHIE_TOKEN;
   }
   // gh_live_xdD0KLeNnMF1OnaApr9CHUp11bYUUKJxnXQZ5F5xK8IaLOn8rzoQ61oEAQVi47hD	   client key
 
@@ -12,10 +12,12 @@ class HealthieAPI {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Healthie-GraphQL-API-Version': '2024-08-01',
-          'Accept': 'application/json',
-          'authorizationsource': 'API'
+          // 'Authorization': `Bearer ${this.apiKey}`,
+          // // 'Healthie-GraphQL-API-Version': '2024-08-01',
+          // 'Accept': '*/*',
+          // 'authorizationsource': 'Web',
+          // 'Access-Control-Allow-Origin': 'http://localhost:3000/',
+          // 'Origin': 'https://secure.gethealthie.com'
         },
         body: JSON.stringify({ query, variables }),
       });
