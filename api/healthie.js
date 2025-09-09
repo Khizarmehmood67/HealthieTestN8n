@@ -28,6 +28,7 @@ export default async function handler(req, res) {
         });
 
         const data = await healthieResponse.json();
+        console.log("healthie response", data);
 
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.status(healthieResponse.status).json(data);
