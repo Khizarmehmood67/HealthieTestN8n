@@ -14,8 +14,8 @@ export default async function handler(req, res) {
         return res.status(405).end('Method Not Allowed');
     }
 
-    const healthieUrl = process.env.REACT_APP_HEALTHIE_BASE_URL;
-    const apiKey = process.env.REACT_APP_HEALTHIE_TOKEN;
+    const healthieUrl = 'https://app.gethealthie.com/graphql';
+    const apiKey = 'gh_live_zYxMrXF5scDk8wAOnCqY8P2NfQiDdJoCNcxwleSh9XI6xlGjvVybKLTj4015JM8X';
 
     try {
         const healthieResponse = await fetch(healthieUrl, {
