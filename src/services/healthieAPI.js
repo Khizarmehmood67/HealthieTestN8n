@@ -19,7 +19,7 @@ class HealthieAPI {
           // 'Access-Control-Allow-Origin': 'http://localhost:3000/',
           // 'Origin': 'https://secure.gethealthie.com'
         },
-        body: JSON.stringify({ query, variables }),
+        body: [JSON.stringify({ operationName: "appointmentLocations", query, variables })],
       });
 
       if (!response.ok) {
