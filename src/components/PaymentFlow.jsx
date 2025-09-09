@@ -19,7 +19,7 @@ import {
 import healthieAPI from '../services/healthieAPI';
 
 // Initialize Stripe with Healthie's official keys
-const HEALTHIE_STRIPE_KEY = 'pk_test_fAj7WlTrG0uc5Z9WHKQDdoTq';
+const HEALTHIE_STRIPE_KEY = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY;
 
 const stripePromise = loadStripe(HEALTHIE_STRIPE_KEY);
 

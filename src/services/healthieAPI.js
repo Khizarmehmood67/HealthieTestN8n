@@ -1,7 +1,7 @@
 class HealthieAPI {
   constructor () {
-    this.baseURL = 'https://staging-api.gethealthie.com/graphql';
-    this.apiKey = 'gh_sbox_v9VbN8qKZrogpy4lN9IK8nFhASH5gJcfBsGFCzhubzv0O1M8dUslz2d2lm9oxWn1';
+    this.baseURL = process.env.REACT_APP_HEALTHIE_BASE_URL;
+    this.apiKey = process.env.REACT_APP_HEALTHIE_TOKEN;
   }
   // gh_live_xdD0KLeNnMF1OnaApr9CHUp11bYUUKJxnXQZ5F5xK8IaLOn8rzoQ61oEAQVi47hD	   client key
 

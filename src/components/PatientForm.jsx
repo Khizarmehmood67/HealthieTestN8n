@@ -19,7 +19,6 @@ const PatientForm = ({
     onNext,
 }) => {
     const theme = useTheme();
-    const ZAPIER_WEBHOOK_URL = 'https://hooks.zapier.com/hooks/catch/24427250/uhlhnw3/'
     const [patientData, setPatientData] = useState({
         firstName: '',
         lastName: '',
@@ -28,6 +27,7 @@ const PatientForm = ({
         appointment_type_id: '',
         contact_type: 'In Person'
     });
+
     const handlePatientSubmit = async () => {
         if (patientData) {
             onNext(patientData)
@@ -37,8 +37,9 @@ const PatientForm = ({
                 lastName: patientData.lastName,
                 phone: patientData.phone,
                 email: patientData.email,
+                locationId: "mNtVIPn2fGtgLULPCUc1"
             };
-            const response = await fetch('https://edmedsai.app.n8n.cloud/webhook-test/94e99ec8-d834-4693-b5e0-cc389db9fa4f', {
+            const response = await fetch(process.env.REACT_APP_N8N_WEBHOOK_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
