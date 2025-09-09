@@ -535,12 +535,36 @@ query  {
 
   async getLocations() {
     const query = `
-  query appointmentLocations($provider_id: ID) {\n  provider(id: $provider_id) {\n    id\n    appointment_setting {\n      id\n      user_id\n      __typename\n    }\n    can_edit_settings\n    appointment_locations {\n      location\n      clients_can_book\n      has_rooms\n      rooms {\n        id\n        name\n        limit_to_one\n        __typename\n      }\n      id\n      __typename\n    }\n    __typename\n  }\n}
+  query appointmentLocations($provider_id: ID) {
+  provider(id: $provider_id) {
+    id
+    appointment_setting {
+      id
+      user_id
+      __typename
+    }
+    can_edit_settings
+    appointment_locations {
+      location
+      clients_can_book
+      has_rooms
+      rooms {
+        id
+        name
+        limit_to_one
+        __typename
+      }
+      id
+      __typename
+    }
+    __typename
+  }
+}
     `;
 
 
     try {
-      const response = await this.graphqlRequest(query, { provider_id: 9589558 });
+      const response = await this.graphqlRequest(query);
       return response.data.provider.appointment_locations;
     } catch (error) {
       console.error('Failed to fetch locations:', error);
