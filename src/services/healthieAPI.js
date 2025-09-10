@@ -215,6 +215,7 @@ query  {
       last_name: clientData.last_name,
       email: clientData.email,
       phone_number: clientData.phone,
+      dietitian_id: clientData.provider_id
     };
 
     try {
@@ -1077,7 +1078,7 @@ query  {
   //   }
   // }
 
-  async getAvailabilities(locationId, appointmentTypeId, startDate, endDate, providerId = null) {
+  async getAvailabilities(locationId, appointmentTypeId, startDate, endDate, providerId = null, userTimeZone) {
     const query = `
       query availabilities(
      $user_id: ID, 
@@ -1131,7 +1132,7 @@ query  {
       appointment_type_id: appointmentTypeId?.toString() || null,
       startDate: startDate,
       endDate: endDate,
-      timezone: "Asia/Yekaterinburg",
+      timezone: userTimeZone,
       one_time: true,
       is_repeating: true,
       includeRepeating: true,

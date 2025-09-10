@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Grid, Card, CardContent, Button, CircularProgress, Chip } from '@mui/material';
+import { Box, Typography, Grid, Card, CardContent, Button, CircularProgress, Chip, CardMedia, Avatar } from '@mui/material';
 import { MedicalServices, AccessTime, AttachMoney } from '@mui/icons-material';
 import HealthieAPI from '../services/healthieAPI';  // Assuming this is your API service
 import { useTheme } from '@mui/material/styles';
@@ -93,52 +93,68 @@ const ServiceSelector = ({ location, onNext }) => {
                             } }
                             onClick={ () => handleSelect(service) }
                         >
-                            <CardContent sx={ { p: 3 } }>
-                                <Box sx={ { display: 'flex', alignItems: 'flex-start', mb: 2 } }>
-                                    <MedicalServices
-                                        sx={ {
-                                            fontSize: 20,
-                                            color: selectedService?.id === service.id ? theme.palette.primary.main : '#5f6368',
-                                            mr: 1,
-                                            mt: 0.5,
-                                        } }
-                                    />
-                                    <Typography
-                                        variant="body1"
-                                        fontWeight={ 500 }
-                                        color="#1a1a1a"
-                                        sx={ { fontSize: '0.875rem' } }
-                                    >
-                                        { service.name }
-                                    </Typography>
-                                </Box>
+                            <CardContent style={ { display: 'flex', flexDirection: "column", justifyContent: "space-between", height: "100%", padding: "12px", paddingBottom: "12px" } }>
+                                <Grid container sx={ { display: 'flex', flexDirection: "column", alignItems: 'center', } }>
+                                    <Grid item>
+                                        <Avatar
+                                            src={ service.offering_image?.image_url }
+                                            alt={ service.name }
+                                            sx={ {
+                                                width: 48,
+                                                height: 48,
+                                                bgcolor: '#e8f0fe',
+                                                border: '2px solid #fff',
+                                                boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
+                                            } }
+                                        >
+                                            {/* Fallback icon if no image */ }
+                                            <MedicalServices sx={ { color: theme.palette.primary.main } } />
+                                        </Avatar>
+                                    </Grid>
+                                    <Grid item>
+                                        <Typography
+                                            variant="body1"
+                                            fontWeight={ 500 }
+                                            textAlign="center"
+                                            color="#1a1a1a"
+                                            sx={ { fontSize: '0.775rem' } }
+                                        >
+                                            { service.name }
+                                        </Typography>
+                                    </Grid>
+                                </Grid>
 
                                 <Typography
                                     variant="body2"
                                     color="#5f6368"
-                                    sx={ { mb: 3, fontSize: '0.75rem', lineHeight: 1.4 } }
+                                    className='linecramp_p'
+                                    sx={ { fontSize: '0.65rem', lineHeight: 1.2, } }
                                 >
                                     <div dangerouslySetInnerHTML={ { __html: service.description } }></div>
                                 </Typography>
 
-                                <Box sx={ { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } }>
-                                    <Box sx={ { display: 'flex', alignItems: 'center' } }>
-                                        <AccessTime sx={ { fontSize: 14, color: '#5f6368', mr: 0.5 } } />
-                                        <Typography variant="body2" color="#5f6368" sx={ { fontSize: '0.75rem' } }>
-                                            { service.duration } min
-                                        </Typography>
-                                    </Box>
-                                    <Chip
-                                        label={ `$${service.price || 'N/A'}` }
-                                        size="small"
-                                        sx={ {
-                                            backgroundColor: '#e8f0fe',
-                                            color: theme.palette.primary.main,
-                                            fontSize: '0.75rem',
-                                            height: '24px',
-                                        } }
-                                    />
-                                </Box>
+                                <Grid container justifyContent="space-between" alignItems="center">
+                                    {/* Left side: Time Duration */ }
+                                    <Grid item>
+                                        <Box sx={ { display: 'flex', alignItems: 'center', fontSize: '0.75rem', } }>
+                                            Price :
+                                        </Box>
+                                    </Grid>
+
+                                    {/* Right side: Price Chip */ }
+                                    <Grid item>
+                                        <Chip
+                                            label={ `$${service.price || 'N/A'}` }
+                                            size="small"
+                                            sx={ {
+                                                backgroundColor: '#e8f0fe',
+                                                color: theme.palette.primary.main,
+                                                fontSize: '0.75rem',
+                                                height: '24px',
+                                            } }
+                                        />
+                                    </Grid>
+                                </Grid>
                             </CardContent>
                         </Card>
                     </Grid>

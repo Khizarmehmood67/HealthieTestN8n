@@ -11,3 +11,11 @@ body {
   -moz-osx-font-smoothing: grayscale;
   color: #000000;
 }
+
+.linecramp_p{
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

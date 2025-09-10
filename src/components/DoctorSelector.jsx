@@ -26,6 +26,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
         return date;
     });
 
+    const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     // Fetch doctors on component mount
     useEffect(() => {
         if (location && service) {
@@ -54,7 +55,8 @@ const DoctorSelector = ({ location, service, onNext }) => {
                 service.id,
                 startDate,
                 endDate,
-                providerId
+                providerId,
+                userTimeZone
             );
 
             // Fetch appointments separately

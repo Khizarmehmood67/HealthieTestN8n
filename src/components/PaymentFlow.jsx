@@ -69,7 +69,8 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                     last_name: bookingData.patient.lastName,
                     email: bookingData.patient.email,
                     phone: bookingData.patient.phone,
-                    dob: bookingData.patient.dateOfBirth
+                    dob: bookingData.patient.dateOfBirth,
+                    provider_id: bookingData.appointment.providerId.toString()
                 });
             }
 
@@ -386,7 +387,7 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                                 <CircularProgress size={ 20 } sx={ { mr: 1, color: 'white' } } />
                                 Processing...
                             </>
-                        ) : totalAmount > 0 ? (
+                        ) : totalAmount > 0 || !isOhioLocation ? (
                             <>
                                 <Lock sx={ { mr: 1, fontSize: 20 } } />
                                 Pay ${ totalAmount }
@@ -857,7 +858,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                         {/* Payment Form */ }
                         <Box sx={ { border: '1px solid #e0e0e0', borderRadius: 2, p: { xs: 2, sm: 3 } } }>
                             <Typography variant="subtitle1" fontWeight={ 600 } gutterBottom>
-                                { totalAmount > 0 ? 'Payment Information' : 'Confirm Insurance Claim' }
+                                { totalAmount > 0 || !isOhioLocation ? 'Payment Information' : 'Confirm Insurance Claim' }
                             </Typography>
 
                             <Elements stripe={ stripePromise }>
