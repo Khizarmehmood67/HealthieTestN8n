@@ -107,7 +107,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
 
         // Process each availability
         avails.forEach(avail => {
-            if (!avail.range_start || !avail.range_end || avail.is_repeating) return;
+            if (!avail.range_start || !avail.range_end) return;
 
             const availStart = new Date(avail.range_start);
             const availEnd = new Date(avail.range_end);
