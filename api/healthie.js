@@ -21,6 +21,8 @@ export default async function handler(req, res) {
         headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`,
+            'Healthie-GraphQL-API-Version': '2024-08-01',
+            'AuthorizationSource': 'API'
         },
         body: JSON.stringify(req.body),
     };
