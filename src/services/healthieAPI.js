@@ -1,6 +1,6 @@
 class HealthieAPI {
   constructor () {
-    this.baseURL = 'https://healthie-custom-appointment-app.vercel.app/api/healthie';
+    this.baseURL = '/api/healthie';
     // this.apiKey = process.env.REACT_APP_HEALTHIE_TOKEN;
   }
   // gh_live_xdD0KLeNnMF1OnaApr9CHUp11bYUUKJxnXQZ5F5xK8IaLOn8rzoQ61oEAQVi47hD	   client key
