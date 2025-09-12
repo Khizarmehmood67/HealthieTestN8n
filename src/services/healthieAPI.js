@@ -1,6 +1,6 @@
 class HealthieAPI {
   constructor () {
-    this.baseURL = '/api/healthie';
+    this.baseURL = 'https://healthie-custom-appointment-app.vercel.app/api/healthie';
     // this.apiKey = process.env.REACT_APP_HEALTHIE_TOKEN;
   }
   // gh_live_xdD0KLeNnMF1OnaApr9CHUp11bYUUKJxnXQZ5F5xK8IaLOn8rzoQ61oEAQVi47hD	   client key
@@ -85,7 +85,7 @@ query  {
   }
 
   // Get providers by location and service
-  async getProviders(locationId, serviceId) {
+  async getProviders(stateCode, serviceId) {
     const query = `
    query organizationMembers(
   $conversation_id: ID
@@ -136,7 +136,7 @@ query  {
     `;
 
     try {
-      const response = await this.graphqlRequest(query);
+      const response = await this.graphqlRequest(query, { licensed_in_state: stateCode });
       return response.data;
     } catch (error) {
       console.error('Failed to fetch providers:', error);
@@ -257,10 +257,22 @@ query  {
 
   async getAppointmentTypes() {
     const query = `
-           query {
+         query {
                 appointmentTypes {
                     id
                     name
+                    pricing
+                  client_display_name
+                  clients_can_book
+                  insurance_billing_enabled
+                  valid_state_licensing_for
+price_and_cpt_price{
+  price
+  cpt_price
+}
+              available_contact_types    
+                  
+                  
                 }
             }
     `;

@@ -17,9 +17,10 @@ const ServiceSelector = ({ location, onNext }) => {
             setLoading(true);
             try {
                 // Fetch the offerings from the Healthie API
-                const response = await HealthieAPI.getServices(location.id);
-                if (response && response.data) {
-                    setServices(response.data.offerings);
+                const response = await HealthieAPI.getAppointmentTypes();
+                if (response) {
+                    const filterServices = response.filter((appt) => appt.clients_can_book === true)
+                    setServices(filterServices);
                 }
             } catch (error) {
                 console.error('Failed to fetch services:', error);
@@ -124,14 +125,14 @@ const ServiceSelector = ({ location, onNext }) => {
                                     </Grid>
                                 </Grid>
 
-                                <Typography
+                                {/* <Typography
                                     variant="body2"
                                     color="#5f6368"
                                     className='linecramp_p'
                                     sx={ { fontSize: '0.65rem', lineHeight: 1.2, } }
                                 >
                                     <div dangerouslySetInnerHTML={ { __html: service.description } }></div>
-                                </Typography>
+                                </Typography> */}
 
                                 <Grid container justifyContent="space-between" alignItems="center">
                                     {/* Left side: Time Duration */ }
@@ -144,7 +145,7 @@ const ServiceSelector = ({ location, onNext }) => {
                                     {/* Right side: Price Chip */ }
                                     <Grid item>
                                         <Chip
-                                            label={ `$${service.price || 'N/A'}` }
+                                            label={ `${service.pricing || 'N/A'}` }
                                             size="small"
                                             sx={ {
                                                 backgroundColor: '#e8f0fe',

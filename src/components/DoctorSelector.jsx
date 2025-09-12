@@ -7,7 +7,7 @@ import { AccessTime, Star, ChevronLeft, ChevronRight, Person, Groups } from '@mu
 import healthieAPI from '../services/healthieAPI';
 import { useTheme } from '@mui/material/styles';
 import { format, addDays, startOfWeek, parseISO, isSameDay, startOfDay, endOfDay } from 'date-fns';
-
+import US_STATES from '../data/UsStates';
 const DoctorSelector = ({ location, service, onNext }) => {
     const [currentWeek, setCurrentWeek] = useState(new Date());
     const [availabilities, setAvailabilities] = useState([]);
@@ -88,8 +88,11 @@ const DoctorSelector = ({ location, service, onNext }) => {
 
     const fetchDoctors = async () => {
         try {
-            const doctorsData = await healthieAPI.getProviders(location.id, service.id);
-            setDoctors(doctorsData.organizationMembers || []);
+            const stateCode = US_STATES.find(state => state.name === location.location)?.code;
+            const doctorsData = await healthieAPI.getProviders(stateCode, service.id);
+            if (doctorsData.organizationMembers) {
+                setDoctors(doctorsData.organizationMembers || []);
+            }
         } catch (error) {
             console.error('Failed to fetch doctors:', error);
             setDoctors([]);
