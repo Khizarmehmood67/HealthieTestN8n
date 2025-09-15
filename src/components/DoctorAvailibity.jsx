@@ -95,7 +95,7 @@ import healthieAPI from '../services/healthieAPI';
 //             date: selectedDate,
 //             startTime: slot.startTime,
 //             endTime: slot.endTime,
-//             price: slot.price || service.price
+//             pricing: slot.pricing || service.pricing
 //         };
 //         setAppointmentSlot(appointmentData);
 //     };
@@ -245,9 +245,9 @@ import healthieAPI from '../services/healthieAPI';
 //                                                 <Typography variant="body2" fontWeight={ 600 }>
 //                                                     { slot.startTime } - { slot.endTime }
 //                                                 </Typography>
-//                                                 { slot.price && (
+//                                                 { slot.pricing && (
 //                                                     <Typography variant="caption" color="text.secondary">
-//                                                         ${ slot.price }
+//                                                         { slot.pricing }
 //                                                     </Typography>
 //                                                 ) }
 //                                             </Button>
@@ -459,7 +459,7 @@ const PaymentForm = ({ amount, onPaymentSuccess, loading }) => {
 
                 <Box sx={ { mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1 } }>
                     <Typography variant="h6" color="primary.main" gutterBottom>
-                        Total: ${ amount }
+                        Total: { amount }
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                         Secure payment processed by Stripe
@@ -516,7 +516,7 @@ const PaymentForm = ({ amount, onPaymentSuccess, loading }) => {
                                         Processing Payment...
                                     </>
                                 ) : (
-                                    `Pay $${amount}`
+                                    `Pay ${amount}`
                                 ) }
                             </Button>
                         </Grid>
@@ -556,7 +556,7 @@ const PaymentFlow = ({ onNext }) => {
     });
 
     const subStepLabels = ['Patient Information', 'Payment'];
-    const amount = appointmentSlot?.price || service?.price || 75;
+    const amount = appointmentSlot?.pricing || service?.pricing || 0;
 
     const handlePatientDetailsNext = () => {
         setPatientDetails(patientDetails);
@@ -632,7 +632,7 @@ const PaymentFlow = ({ onNext }) => {
                         <ListItem>
                             <ListItemText
                                 primary="Total Cost"
-                                secondary={ `$${amount}` }
+                                secondary={ `${amount}` }
                             />
                         </ListItem>
                     </List>

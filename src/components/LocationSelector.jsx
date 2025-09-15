@@ -22,7 +22,8 @@ const LocationSelector = ({ onNext }) => {
             setError(null);
             try {
                 const locations = await healthieAPI.getLocations();
-                setLocations(locations);
+                const sortedLocations = locations && locations.sort((a, b) => a.location.localeCompare(b.location));
+                setLocations(sortedLocations);
             } catch (err) {
                 setError('Failed to fetch locations. Please try again later.');
                 console.error(err);

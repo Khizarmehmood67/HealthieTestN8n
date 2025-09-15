@@ -73,7 +73,7 @@ const BookingConfirmation = ({ bookingData }) => {
                                 <Typography variant="body2" color="#5f6368">Amount Paid</Typography>
                                 <Box sx={ { display: 'flex', alignItems: 'center', justifyContent: "space-around" } }>
                                     <Typography variant="body1" fontWeight={ 500 }>
-                                        ${ bookingData.payment?.amount || bookingData.service?.price }
+                                        { bookingData.payment?.amount || bookingData.service?.pricing }
                                     </Typography>
                                 </Box>
                             </Box>

@@ -1,6 +1,6 @@
 class HealthieAPI {
   constructor () {
-    this.baseURL = '/api/healthie';
+    this.baseURL = 'https://healthie-custom-appointment-app.vercel.app/api/healthie';
     // this.apiKey = process.env.REACT_APP_HEALTHIE_TOKEN;
   }
   // gh_live_xdD0KLeNnMF1OnaApr9CHUp11bYUUKJxnXQZ5F5xK8IaLOn8rzoQ61oEAQVi47hD	   client key
@@ -63,24 +63,7 @@ query  {
     } catch (error) {
       console.error('Failed to fetch services:', error);
 
-      return [
-        {
-          id: '1',
-          name: 'General Consultation',
-          description: 'Comprehensive health assessment',
-          length: 30,
-          pricing_info: { price: 75, currency: 'USD' },
-          category: 'Primary Care'
-        },
-        {
-          id: '2',
-          name: 'Mental Health Session',
-          description: 'Professional mental health consultation',
-          length: 45,
-          pricing_info: { price: 120, currency: 'USD' },
-          category: 'Mental Health'
-        },
-      ];
+      return [];
     }
   }
 
@@ -121,6 +104,10 @@ query  {
       qualifications,
     location{
       id,
+      name
+    },
+        appointment_types {
+      id
       name
     },
     appointment_locations{
@@ -456,6 +443,44 @@ price_and_cpt_price{
     }
   }
 
+  async InsuranceEligibilityCheck({ policyId, serviceCodes }) {
+    const mutation = `
+    mutation RunEligibilityCheck($id: ID!, $eligibility_check_service: EligibilityCheckService!) {
+  runEligibilityCheck(input: {id: $id, eligibility_check_service: $eligibility_check_service}) {
+    eligibility_check {
+      id
+      policy {
+        name
+        benefits {
+          category
+          copay
+        }
+      }
+    }
+    messages {
+      field
+      message
+    }
+  }
+}
+
+  `;
+
+    try {
+      const variables = {
+        input: {
+          id: policyId,
+          service_codes: serviceCodes,
+          eligibility_check_service: "claim_md"
+        }
+      };
+
+      const response = await this.graphqlRequest(mutation, variables);
+      // ... rest of the code
+    } catch (error) {
+      // ...
+    }
+  }
 
   async getInsurancePlans({
     is_accepted = true,

@@ -17,7 +17,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
     const [doctors, setDoctors] = useState([]);
     const [loading, setLoading] = useState(false);
     const [timeSlotsByDay, setTimeSlotsByDay] = useState({});
-    const [providerMode, setProviderMode] = useState('any'); // 'any' or 'specific'
+    const [providerMode, setProviderMode] = useState('specific'); // 'any' or 'specific'
     const theme = useTheme();
 
     // Generate week days (7 days for full week view)
@@ -91,7 +91,11 @@ const DoctorSelector = ({ location, service, onNext }) => {
             const stateCode = US_STATES.find(state => state.name === location.location)?.code;
             const doctorsData = await healthieAPI.getProviders(stateCode, service.id);
             if (doctorsData.organizationMembers) {
-                setDoctors(doctorsData.organizationMembers || []);
+                const filteredDoctors = doctorsData.organizationMembers.filter(member =>
+                    member.appointment_types?.some(type => type.id === service.id)
+                );
+
+                setDoctors(filteredDoctors || []);
             }
         } catch (error) {
             console.error('Failed to fetch doctors:', error);
@@ -227,7 +231,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
             </Typography>
 
             {/* Provider Selection Toggle */ }
-            <Box sx={ { mb: 3, display: 'flex', alignItems: 'center', gap: 2 } }>
+            {/* <Box sx={ { mb: 3, display: 'flex', alignItems: 'center', gap: 2 } }>
                 <ToggleButtonGroup
                     value={ providerMode }
                     exclusive
@@ -243,23 +247,25 @@ const DoctorSelector = ({ location, service, onNext }) => {
                         Specific Provider
                     </ToggleButton>
                 </ToggleButtonGroup>
-
-                { selectedDoctor && (
-                    <Chip
-                        avatar={ <Avatar sx={ { width: 24, height: 24 } }>{ selectedDoctor.full_name?.charAt(0) }</Avatar> }
-                        label={ `Dr. ${selectedDoctor.full_name}` }
-                        color="primary"
-                        size="small"
-                    />
-                ) }
-            </Box>
+            </Box> */}
 
             {/* Doctor Selection */ }
             { providerMode === 'specific' && (
                 <Box sx={ { mb: 3 } }>
-                    <Typography variant="subtitle2" fontWeight={ 500 } sx={ { mb: 2 } }>
-                        Select a Provider:
-                    </Typography>
+                    <Box display="flex" gap="10px">
+                        <Typography variant="subtitle2" fontWeight={ 500 } sx={ { mb: 2 } }>
+                            Select a Provider:
+                        </Typography>
+
+                        { selectedDoctor && (
+                            <Chip
+                                avatar={ <Avatar sx={ { width: 20, height: 20, ml: 6 } }>{ selectedDoctor.full_name?.charAt(0) }</Avatar> }
+                                label={ `Dr. ${selectedDoctor.full_name}` }
+
+                                size="small"
+                            />
+                        ) }
+                    </Box>
                     <Grid container spacing={ 1.5 }>
                         { doctors.map((doctor) => (
                             <Grid item xs={ 6 } sm={ 4 } md={ 3 } size={ { xs: 6, sm: 4, md: 3 } } key={ doctor.id }>
@@ -300,6 +306,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
                                 </Card>
                             </Grid>
                         )) }
+                        { doctors.length === 0 && <Box>No provider available in selected location & service</Box> }
                     </Grid>
                 </Box>
             ) }

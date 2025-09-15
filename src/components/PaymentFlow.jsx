@@ -17,6 +17,7 @@ import {
     useElements
 } from '@stripe/react-stripe-js';
 import healthieAPI from '../services/healthieAPI';
+import { logDOM } from '@testing-library/dom';
 
 // Initialize Stripe with Healthie's official keys
 const HEALTHIE_STRIPE_KEY = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY;
@@ -31,6 +32,7 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
     const [cardholderName, setCardholderName] = useState('');
     const [saveCard, setSaveCard] = useState(false);
     const theme = useTheme();
+    console.log("totalAmount", totalAmount);
 
     const elementOptions = {
         style: {
@@ -78,7 +80,7 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
             let billingResult = null;
             let appointmentData = {
                 user_id: client.id,
-                appointment_type_id: appointment_type[0]?.id || null,
+                appointment_type_id: bookingData.service.id || null,
                 contact_type: bookingData.patient.contact_type || 'In Person',
                 other_party_id: bookingData.appointment?.providerId,
                 datetime: bookingData.appointment?.date
@@ -102,7 +104,7 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                         qualifications: bookingData.appointment?.doctor?.qualifications || null,  // Include qualifications if available
                     },
                     service_location_id: bookingData.location.id,  // Location ID (Service location)
-                    amount_paid: bookingData.service.price,  // Amount paid by insurance (or $0 if covered entirely)
+                    amount_paid: bookingData.service.pricing,  // Amount paid by insurance (or $0 if covered entirely)
                     cms1500_policies: [
                         {
                             policy: {
@@ -406,7 +408,7 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
             <Box sx={ { display: 'flex', alignItems: 'center', justifyContent: 'center', mt: 2 } }>
                 <Lock sx={ { fontSize: 14, color: 'text.secondary', mr: 0.5 } } />
                 <Typography variant="caption" color="text.secondary">
-                    { totalAmount > 0 ? 'Secured by Stripe' : 'Insurance claim will be processed securely' }
+                    { totalAmount > 0 && !isOhioLocation ? 'Secured by Stripe' : 'Insurance claim will be processed securely' }
                 </Typography>
             </Box>
         </Box>
@@ -491,7 +493,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                     ...prev,
                     verified: true,
                     copayAmount: verificationResult.copay_amount,
-                    coverageAmount: verificationResult.coverage_amount || (bookingData.service?.price)
+                    coverageAmount: verificationResult.coverage_amount || (bookingData.service?.pricing)
                 }));
                 setCurrentSubStep(1);
             } else {
@@ -517,10 +519,14 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
 
     // Calculate total amount based on insurance (Ohio only)
     const calculateTotalAmount = () => {
+        let amount;
         if (isOhioLocation && insuranceData.verified && insuranceData.billingType === 'insurance') {
-            return insuranceData.copayAmount || 0;
+            amount = insuranceData.copayAmount;
+        } else {
+            amount = bookingData.service?.pricing;
         }
-        return bookingData.service?.price || 75;
+        // Ensure numeric output
+        return parseFloat((amount || '0').replace(/[^0-9.-]/g, ''));
     };
 
     const totalAmount = calculateTotalAmount();
@@ -758,7 +764,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                         {/* Show insurance success if verified - only for Ohio */ }
                         { isOhioLocation && insuranceData.verified && insuranceData.billingType === 'insurance' && (
                             <Alert severity="success" sx={ { mb: 3 } }>
-                                Insurance verified! Your copay amount is ${ bookingData.service.price }
+                                Insurance verified! Your copay amount is { bookingData.service.pricing }
                             </Alert>
                         ) }
 
@@ -827,12 +833,12 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                 <>
                                     <Box sx={ { display: 'flex', justifyContent: 'space-between', mb: 1 } }>
                                         <Typography variant="body2">Service Fee:</Typography>
-                                        <Typography variant="body2">${ bookingData.service?.price || 75 }</Typography>
+                                        <Typography variant="body2">{ bookingData.service?.pricing || 0 }</Typography>
                                     </Box>
                                     <Box sx={ { display: 'flex', justifyContent: 'space-between', mb: 1 } }>
                                         <Typography variant="body2" color="success.main">Insurance Coverage:</Typography>
                                         <Typography variant="body2" color="success.main">
-                                            -${ insuranceData.coverageAmount || (bookingData.service?.price) }
+                                            -{ insuranceData.coverageAmount || (bookingData.service?.pricing) }
                                         </Typography>
                                     </Box>
                                     <Divider sx={ { my: 1 } } />
