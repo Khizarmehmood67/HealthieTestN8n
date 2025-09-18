@@ -3,12 +3,12 @@ import { Box, Typography } from '@mui/material';
 
 const BookingHeader = () => {
     return (
-        <Box sx={ { mb: 4 } }>
+        <Box sx={ { mb: 2 } }>
             <Box sx={ { textAlign: 'center', } }>
                 <img
-                    src="https://www.recoverydelivered.com/wp-content/uploads/2022/05/rec-del-logo-color.png"
+                    src="assets/images/logo.png"
                     alt="Booking Logo"
-                    style={ { width: 120, height: 'auto', } }
+                    style={ { width: 100, height: 'auto', backgroundColor: "#49C7AB", borderRadius: "10%" } }
                 />
             </Box>
             <Typography

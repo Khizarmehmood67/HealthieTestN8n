@@ -443,45 +443,91 @@ price_and_cpt_price{
     }
   }
 
-  async InsuranceEligibilityCheck({ policyId, serviceCodes }) {
+  async createPolicy(userData) {
     const mutation = `
-    mutation RunEligibilityCheck($id: ID!, $eligibility_check_service: EligibilityCheckService!) {
-  runEligibilityCheck(input: {id: $id, eligibility_check_service: $eligibility_check_service}) {
-    eligibility_check {
-      id
-      policy {
-        name
-        benefits {
-          category
-          copay
+        mutation UpdateUser($id: ID!, $policies: [UserPolicyInput!]) {
+            updateUser(input: {
+                id: $id,
+                policies: $policies
+            }) {
+                user {
+                    id
+                    policies {
+                        id
+                        num
+                        group_num
+                        holder_dob
+                        holder_first
+                        holder_last
+                        holder_relationship
+                        insurance_plan {
+                            id
+                            payer_name
+                        }
+                    }
+                }
+                messages {
+                    field
+                    message
+                }
+            }
         }
-      }
-    }
-    messages {
-      field
-      message
-    }
-  }
-}
+    `;
 
-  `;
+    const variables = {
+      id: userData.userId,
+      policies: [{
+        insurance_plan_id: userData.insurancePlanId,
+        num: userData.memberId,
+        group_num: userData.groupNumber,
+        holder_dob: userData.holderDob,
+        holder_first: userData.holderFirstName,
+        holder_last: userData.holderLastName,
+        holder_relationship: userData.holderRelationship,
+        priority_type: "primary"
+      }]
+    };
+    const response = await this.graphqlRequest(mutation, variables);
+    return response.data.updateUser.user
+  };
 
-    try {
-      const variables = {
-        input: {
-          id: policyId,
-          service_codes: serviceCodes,
-          eligibility_check_service: "claim_md"
+  async runEligibilityCheck({ policyId, serviceCodes }) {
+    const mutation = `
+        mutation RunEligibilityCheck($id: ID!, $eligibility_check_service: EligibilityCheckService!) {
+            runEligibilityCheck(input: {id: $id, eligibility_check_service: $eligibility_check_service}) {
+                eligibility_check {
+                    id
+                    policy {
+                        id
+                        name
+                        payer_location {
+                            line1
+                            city
+                            state
+                            zip
+                        }
+                        benefits {
+                            category
+                            copay
+                            coinsurance
+                        }
+                    }
+                }
+                messages {
+                    field
+                    message
+                }
+            }
         }
-      };
+    `;
 
-      const response = await this.graphqlRequest(mutation, variables);
-      // ... rest of the code
-    } catch (error) {
-      // ...
-    }
+    const variables = {
+      id: policyId,  // This should be the insurance policy ID
+      eligibility_check_service: serviceCodes  // This should be the service type enum
+    };
+
+    return await this.graphqlRequest(mutation, variables);
   }
-
   async getInsurancePlans({
     is_accepted = true,
   }) {
@@ -629,8 +675,8 @@ price_and_cpt_price{
     try {
       const response = await this.graphqlRequest(query, { email });
       // Filter to find exact email match since keywords search is fuzzy
-      const users = response.data?.users || [];
-      return users.find(user => user.email === email) || null;
+      const users = response.data?.users[0];
+      return users;
     } catch (error) {
       console.error('Failed to get client by email:', error);
       return null;
@@ -1428,53 +1474,6 @@ price_and_cpt_price{
     return response?.data?.insurancePlans || [];
   }
 
-  /**
-   * Get all insurance plans with filters
-   */
-  // async getInsurancePlans(params = {}) {
-  //   const query = `
-  //           query insurancePlans($ids: String, $keywords: String, $is_accepted: Boolean, $sort_by: String) {
-  //               insurancePlans(ids: $ids, keywords: $keywords, is_accepted: $is_accepted, sort_by: $sort_by) {
-  //                   id
-  //                   name_and_id
-  //                   payer_id
-  //                   payer_name
-  //                   is_accepted
-  //               }
-  //           }
-  //       `;
-
-  //   return await this.request(query, params);
-  // }
-
-  /**
-   * Verify insurance eligibility (mock - replace with actual verification API)
-   */
-  // async verifyInsurance(params) {
-  //   // Note: Healthie doesn't have a direct insurance verification API
-  //   // You might need to integrate with a third-party service like Eligible or ChangeHealthcare
-  //   // This is a mock implementation
-
-  //   try {
-  //     // For now, we'll just check if the plan exists
-  //     const plans = await this.getInsurancePlans({ ids: params.insurance_plan_id });
-
-  //     if (plans?.data?.insurancePlans?.length > 0) {
-  //       return {
-  //         verified: true,
-  //         copay_amount: 25, // Default copay
-  //         coverage_amount: 125, // Default coverage
-  //         deductible_met: false,
-  //         deductible_remaining: 500
-  //       };
-  //     }
-
-  //     return { verified: false };
-  //   } catch (error) {
-  //     console.error('Insurance verification error:', error);
-  //     return { verified: false };
-  //   }
-  // }
 
   // =============== SUPERBILLS ===============
 

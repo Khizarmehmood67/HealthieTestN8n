@@ -8,6 +8,7 @@ import healthieAPI from '../services/healthieAPI';
 import { useTheme } from '@mui/material/styles';
 import { format, addDays, startOfWeek, parseISO, isSameDay, startOfDay, endOfDay } from 'date-fns';
 import US_STATES from '../data/UsStates';
+
 const DoctorSelector = ({ location, service, onNext }) => {
     const [currentWeek, setCurrentWeek] = useState(new Date());
     const [availabilities, setAvailabilities] = useState([]);
@@ -17,7 +18,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
     const [doctors, setDoctors] = useState([]);
     const [loading, setLoading] = useState(false);
     const [timeSlotsByDay, setTimeSlotsByDay] = useState({});
-    const [providerMode, setProviderMode] = useState('specific'); // 'any' or 'specific'
+    const [providerMode, setProviderMode] = useState('any'); // 'any' or 'specific'
     const theme = useTheme();
 
     // Generate week days (7 days for full week view)
@@ -27,64 +28,20 @@ const DoctorSelector = ({ location, service, onNext }) => {
     });
 
     const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
     // Fetch doctors on component mount
     useEffect(() => {
         if (location && service) {
             fetchDoctors();
-            fetchAllData();
         }
-    }, []);
+    }, [location, service]);
 
-    // Refetch data when week, provider mode, or selected doctor changes
+    // Refetch availability data when week, provider mode, or selected doctor changes
     useEffect(() => {
-        if (location && service) {
+        if (location && service && doctors.length > 0) {
             fetchAllData();
         }
-    }, [currentWeek, providerMode, selectedDoctor]);
-
-    const fetchAllData = async () => {
-        setLoading(true);
-        try {
-            const startDate = startOfDay(weekDays[0]).toISOString();
-            const endDate = endOfDay(weekDays[weekDays.length - 1]).toISOString();
-            const providerId = providerMode === 'specific' && selectedDoctor ? selectedDoctor.id : null;
-
-            // Fetch availabilities
-            const availData = await healthieAPI.getAvailabilities(
-                location.id,
-                service.id,
-                startDate,
-                endDate,
-                providerId,
-                userTimeZone
-            );
-
-            // Fetch appointments separately
-            // const apptData = await healthieAPI.getAppointments(
-            //     location.id,
-            //     startDate,
-            //     endDate,
-            //     providerId
-            // );
-
-            if (availData) {
-                setAvailabilities(availData);
-                // setAppointments(apptData?.appointments || []);
-                processAvailabilitiesIntoSlots(
-                    availData || [],
-
-                );
-            }
-        } catch (error) {
-            console.error('Failed to fetch data:', error);
-            // Clear slots on error
-            setTimeSlotsByDay({});
-            setAvailabilities([]);
-            setAppointments([]);
-        } finally {
-            setLoading(false);
-        }
-    };
+    }, [currentWeek, providerMode, selectedDoctor, doctors]);
 
     const fetchDoctors = async () => {
         try {
@@ -100,6 +57,64 @@ const DoctorSelector = ({ location, service, onNext }) => {
         } catch (error) {
             console.error('Failed to fetch doctors:', error);
             setDoctors([]);
+        }
+    };
+
+    const fetchAllData = async () => {
+        setLoading(true);
+        try {
+            const startDate = startOfDay(weekDays[0]).toISOString();
+            const endDate = endOfDay(weekDays[weekDays.length - 1]).toISOString();
+
+            let allAvailabilities = [];
+
+            if (providerMode === 'specific' && selectedDoctor) {
+                // Fetch availability for specific doctor
+                const availData = await healthieAPI.getAvailabilities(
+                    location.id,
+                    service.id,
+                    startDate,
+                    endDate,
+                    selectedDoctor.id,
+                    userTimeZone
+                );
+                allAvailabilities = availData || [];
+            } else if (providerMode === 'any') {
+                // Fetch availabilities for all doctors who offer this service
+                const availabilityPromises = doctors.map(async (doctor) => {
+                    try {
+                        const availData = await healthieAPI.getAvailabilities(
+                            location.id,
+                            service.id,
+                            startDate,
+                            endDate,
+                            doctor.id,
+                            userTimeZone
+                        );
+                        return availData || [];
+                    } catch (error) {
+                        console.warn(`Failed to fetch availability for doctor ${doctor.id}:`, error);
+                        return [];
+                    }
+                });
+
+                // Wait for all availability requests to complete
+                const availabilityArrays = await Promise.all(availabilityPromises);
+                // Flatten all availability arrays into one
+                allAvailabilities = availabilityArrays.flat();
+            }
+
+            setAvailabilities(allAvailabilities);
+            processAvailabilitiesIntoSlots(allAvailabilities);
+
+        } catch (error) {
+            console.error('Failed to fetch data:', error);
+            // Clear slots on error
+            setTimeSlotsByDay({});
+            setAvailabilities([]);
+            setAppointments([]);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -124,12 +139,15 @@ const DoctorSelector = ({ location, service, onNext }) => {
 
             let slotStart = new Date(availStart);
 
-            // Generate 15-minute slots (though your code generates 30-minute slots)
+            // Generate 30-minute slots
             while (slotStart < availEnd && slotsByDay[dayKey].length < 20) {
                 const slotEnd = new Date(slotStart);
                 slotEnd.setMinutes(slotEnd.getMinutes() + 30);
 
                 if (slotEnd > availEnd) break;
+
+                // Find the doctor for this availability
+                const slotDoctor = doctors.find(d => d.id === avail.user_id);
 
                 // Add the slot
                 slotsByDay[dayKey].push({
@@ -139,7 +157,8 @@ const DoctorSelector = ({ location, service, onNext }) => {
                     available: true,
                     providerId: avail.user_id,
                     availabilityId: avail.id,
-                    fullAvailability: avail
+                    fullAvailability: avail,
+                    doctor: slotDoctor
                 });
 
                 slotStart = new Date(slotEnd);
@@ -155,8 +174,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
 
         // Update the state with the processed slots
         setTimeSlotsByDay(slotsByDay);
-    };;
-
+    };
 
     const handleSlotSelect = (slot) => {
         setSelectedSlot(slot);
@@ -168,8 +186,6 @@ const DoctorSelector = ({ location, service, onNext }) => {
                 setSelectedDoctor(provider);
             }
         }
-
-        // onNext(appointmentData);
     };
 
     const handleProviderModeChange = (event, newMode) => {
@@ -194,13 +210,13 @@ const DoctorSelector = ({ location, service, onNext }) => {
     const handleNext = () => {
         if (selectedSlot) {
             const appointmentData = {
-                doctor: selectedDoctor,
+                doctor: selectedDoctor || selectedSlot.doctor?.id,
                 date: selectedSlot.datetime,
                 startTime: selectedSlot.time,
                 slotId: selectedSlot.id,
                 availabilityId: selectedSlot.availabilityId,
                 providerId: selectedSlot.providerId,
-                doctor: selectedSlot.fullAvailability.user.name
+                doctorName: selectedSlot.fullAvailability?.user?.name || selectedSlot.doctor?.full_name
             };
             onNext(appointmentData);
         }
@@ -231,7 +247,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
             </Typography>
 
             {/* Provider Selection Toggle */ }
-            {/* <Box sx={ { mb: 3, display: 'flex', alignItems: 'center', gap: 2 } }>
+            <Box sx={ { mb: 3, display: 'flex', alignItems: 'center', gap: 2, justifyContent: "space-between" } }>
                 <ToggleButtonGroup
                     value={ providerMode }
                     exclusive
@@ -247,7 +263,12 @@ const DoctorSelector = ({ location, service, onNext }) => {
                         Specific Provider
                     </ToggleButton>
                 </ToggleButtonGroup>
-            </Box> */}
+                { availabilities.length === 0 && !loading && (
+                    <Button variant='contained' sx={ { color: "#fff" } }>
+                        Don't see a time? Text us
+                    </Button>
+                ) }
+            </Box>
 
             {/* Doctor Selection */ }
             { providerMode === 'specific' && (
@@ -261,7 +282,6 @@ const DoctorSelector = ({ location, service, onNext }) => {
                             <Chip
                                 avatar={ <Avatar sx={ { width: 20, height: 20, ml: 6 } }>{ selectedDoctor.full_name?.charAt(0) }</Avatar> }
                                 label={ `Dr. ${selectedDoctor.full_name}` }
-
                                 size="small"
                             />
                         ) }
@@ -294,7 +314,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
                                                 fontSize: '1rem'
                                             } }
                                         >
-
+                                            { doctor.full_name?.charAt(0) }
                                         </Avatar>
                                         <Typography variant="body2" fontWeight={ 500 } sx={ { fontSize: '0.875rem' } }>
                                             { doctor.full_name }
@@ -306,7 +326,13 @@ const DoctorSelector = ({ location, service, onNext }) => {
                                 </Card>
                             </Grid>
                         )) }
-                        { doctors.length === 0 && <Box>No provider available in selected location & service</Box> }
+                        { doctors.length === 0 && (
+                            <Box sx={ { p: 2 } }>
+                                <Typography variant="body2" color="textSecondary">
+                                    No provider available in selected location & service
+                                </Typography>
+                            </Box>
+                        ) }
                     </Grid>
                 </Box>
             ) }
@@ -315,6 +341,9 @@ const DoctorSelector = ({ location, service, onNext }) => {
             { loading ? (
                 <Box sx={ { display: 'flex', justifyContent: 'center', py: 8 } }>
                     <CircularProgress sx={ { color: theme.palette.primary.main } } />
+                    <Typography variant="body2" sx={ { ml: 2 } }>
+                        Loading availability...
+                    </Typography>
                 </Box>
             ) : (
                 <Paper elevation={ 0 } sx={ { border: '1px solid #e0e0e0', borderRadius: '8px', overflow: 'hidden' } }>
@@ -418,6 +447,18 @@ const DoctorSelector = ({ location, service, onNext }) => {
                                                         } }
                                                     >
                                                         { slot.time }
+                                                        { providerMode === 'any' && slot.doctor && (
+                                                            <Typography
+                                                                variant="caption"
+                                                                sx={ {
+                                                                    display: 'block',
+                                                                    fontSize: '0.6rem',
+                                                                    opacity: 0.7
+                                                                } }
+                                                            >
+                                                                { slot.doctor.full_name?.split(' ')[0] }
+                                                            </Typography>
+                                                        ) }
                                                     </Button>
                                                 ))
                                             ) }

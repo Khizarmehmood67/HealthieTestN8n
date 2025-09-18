@@ -62,18 +62,24 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
         setProcessing(true);
 
         try {
-            // Step 1: Create or get client in Healthie
-            let client = await healthieAPI.getClientByEmail(bookingData.patient.email);
-
-            if (!client) {
-                client = await healthieAPI.createClient({
-                    first_name: bookingData.patient.firstName,
-                    last_name: bookingData.patient.lastName,
-                    email: bookingData.patient.email,
-                    phone: bookingData.patient.phone,
-                    dob: bookingData.patient.dateOfBirth,
-                    provider_id: bookingData.appointment.providerId.toString()
-                });
+            // Step 1: Use existing client or create if needed
+            let client;
+            if (insuranceData.clientId) {
+                // Client already created during eligibility check
+                client = { id: insuranceData.clientId };
+            } else {
+                // Create or get client
+                client = await healthieAPI.getClientByEmail(bookingData.patient.email);
+                if (!client) {
+                    client = await healthieAPI.createClient({
+                        first_name: bookingData.patient.firstName,
+                        last_name: bookingData.patient.lastName,
+                        email: bookingData.patient.email,
+                        phone: bookingData.patient.phone,
+                        dob: bookingData.patient.dateOfBirth,
+                        provider_id: bookingData.appointment.providerId.toString()
+                    });
+                }
             }
 
             // Step 2: Handle payment based on billing type
@@ -93,29 +99,31 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                         id: client.id,
                         full_legal_name_with_preferred: `${bookingData.patient.firstName} ${bookingData.patient.lastName}`,
                         location: {
-                            line1: bookingData.location.location || '',  // Ensure proper location fields
-                            city: bookingData.location.location || '',
-                            state: bookingData.patient.state || 'US',
-                            zip: bookingData.patient.zip || ''  // Include zip code
+                            line1: bookingData.patient.address || bookingData.location.location || '',
+                            city: bookingData.patient.city || bookingData.location.location || '',
+                            state: bookingData.patient.state || 'OH',
+                            zip: bookingData.patient.zip || ''
                         },
                     },
                     dietitian: {
                         id: bookingData.appointment?.providerId,
-                        qualifications: bookingData.appointment?.doctor?.qualifications || null,  // Include qualifications if available
+                        qualifications: bookingData.appointment?.doctor?.qualifications || null,
                     },
-                    service_location_id: bookingData.location.id,  // Location ID (Service location)
-                    amount_paid: bookingData.service.pricing,  // Amount paid by insurance (or $0 if covered entirely)
+                    service_location_id: bookingData.location.id,
+                    amount_paid: bookingData.service.pricing,
                     cms1500_policies: [
                         {
                             policy: {
                                 insurance_plan_id: insuranceData.planId,
                                 num: insuranceData.memberId,
+                                group_num: insuranceData.groupNumber,
                                 payer_location: {
                                     state: "OH"
                                 },
                                 user_id: client.id,
                                 holder_relationship: insuranceData.relationshipToInsured || 'self',
-                                holder_dob: insuranceData.m_dob || "1998-3-22"
+                                holder_dob: insuranceData.m_dob || "1998-3-22",
+                                eligibility_check_id: insuranceData.eligibilityId // Link to eligibility check
                             }
                         }
                     ],
@@ -187,7 +195,7 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                 // Create superbill for reimbursement
                 const superbillData = {
                     patient_id: client.id,
-                    patient_name: client.name || '', // Add patient_name if needed
+                    patient_name: client.name || `${bookingData.patient.firstName} ${bookingData.patient.lastName}`,
                     patient_dob: insuranceData.m_dob || "2001-09-10",
                     dietitian_id: bookingData.appointment?.providerId,
                     provider_name: bookingData.appointment?.doctor || '',
@@ -198,19 +206,20 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                     icd_codes_super_bills: bookingData.icdCodes || [],
                     cpt_codes_super_bills: bookingData.cptCodes || [],
                     location: {
-                        id: bookingData.location.id, line1: bookingData.location.location || "",
+                        id: bookingData.location.id,
+                        line1: bookingData.location.location || "",
                         state: bookingData.location.location || ""
                     },
                     patient_location: {
                         country: "US",
-                        line1: bookingData.location.location || "",
-                        state: bookingData.location.location || ""
-                    }, // Add patient_location if needed
-                    prov_email: "", // Add prov_email if needed
-                    prov_phone: "", // Add prov_phone if needed
-                    tax_id: "", // Add tax_id if needed
-                    npi: "", // Add npi if needed
-                    license_num: "", // Add license_num if needed
+                        line1: bookingData.patient.address || bookingData.location.location || "",
+                        state: bookingData.patient.state || "OH"
+                    },
+                    prov_email: "",
+                    prov_phone: "",
+                    tax_id: "",
+                    npi: "",
+                    license_num: "",
                 };
 
                 const superbillResult = await healthieAPI.createSuperbill(superbillData);
@@ -277,8 +286,6 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
     return (
         <Box component="form" onSubmit={ handleSubmit }>
             <Grid container spacing={ 2 }>
-                {/* Cardholder Name */ }
-
                 {/* Only show card fields if payment is required */ }
                 { totalAmount > 0 && (
                     <>
@@ -415,7 +422,7 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
     );
 };
 
-// Main PaymentFlow Component - Enhanced with Insurance
+// Main PaymentFlow Component - Enhanced with Insurance Eligibility Verification
 const PaymentFlow = ({ bookingData, onComplete }) => {
     // Check if Ohio location for insurance
     const isOhioLocation = bookingData.location?.code === "OH" || bookingData.location?.location === "Ohio";
@@ -437,7 +444,15 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         verified: false,
         copayAmount: null,
         coverageAmount: null,
-        m_dob: null
+        m_dob: null,
+        eligibilityId: null,
+        benefits: null,
+        eligibilityMessages: [],
+        clientId: null,           // Store client ID from eligibility check
+        deductible: null,         // Store deductible info
+        coinsurance: null,        // Store coinsurance info
+        coveragePercentage: null, // Store coverage percentage
+        eligibilityStatus: null   // Store overall eligibility status
     });
     const [insurancePlans, setInsurancePlans] = useState([]);
     const theme = useTheme();
@@ -462,7 +477,6 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                 setAppointmenttype(appointmentTypes)
             } catch (error) {
                 console.error('Error fetching appointment types:', error);
-                // Handle error as needed
             }
         })();
     }, []);
@@ -471,42 +485,179 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         try {
             const plans = await healthieAPI.getInsurancePlans({ is_accepted: true });
             setInsurancePlans(plans?.data?.insurancePlans || plans || []);
-
         } catch (error) {
             console.error('Failed to fetch insurance plans:', error);
         }
     };
 
+    // Enhanced service code mapping for better CPT code accuracy
+    const getServiceCodeForAppointment = (appointmentType, serviceType) => {
+        const serviceMapping = {
+            'nutrition-consultation': '97802',     // Medical nutrition therapy, initial
+            'nutrition-followup': '97803',         // Medical nutrition therapy, re-assessment  
+            'nutrition': '97802',
+            'dietitian': '97802',
+            'group-nutrition': '97804',            // Medical nutrition therapy, group
+            'therapy-session': '90834',            // Psychotherapy, 45 minutes
+            'therapy': '90834',
+            'medical-consultation': '99213',        // Office visit, established patient
+            'medical': '99213',
+            'wellness': '99401',                   // Preventive counseling
+            'weight-management': '97802'           // Medical nutrition therapy
+        };
+
+        return serviceMapping[appointmentType?.toLowerCase()] ||
+            serviceMapping[serviceType?.toLowerCase()] ||
+            '97802'; // Default to nutrition therapy
+    };
+
+    // Enhanced error handling for eligibility responses
+    const handleEligibilityResponse = (eligibilityResult) => {
+        if (!eligibilityResult?.runEligibilityCheck?.eligibility_check) {
+            throw new Error('No eligibility check response received from insurance system');
+        }
+
+        const { eligibility_check, messages } = eligibilityResult.runEligibilityCheck;
+
+        // Check for error messages
+        if (messages && messages.length > 0) {
+            const errorMessages = messages.filter(m =>
+                m.message && (
+                    m.message.toLowerCase().includes('error') ||
+                    m.message.toLowerCase().includes('invalid') ||
+                    m.message.toLowerCase().includes('not found')
+                )
+            );
+            if (errorMessages.length > 0) {
+                throw new Error(errorMessages.map(m => m.message).join(', '));
+            }
+        }
+
+        if (!eligibility_check?.eligibilityResponse?.eligible) {
+            return {
+                eligible: false,
+                reason: eligibility_check?.eligibilityResponse?.ineligibilityReason ||
+                    'Insurance plan does not cover this service or eligibility could not be verified',
+                messages: messages || [],
+                eligibility_check
+            };
+        }
+
+        return {
+            eligible: true,
+            eligibility_check,
+            messages: messages || []
+        };
+    };
+
+    // UPDATED: Enhanced insurance submission with complete client creation + eligibility flow
     const handleInsuranceSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
         setError(null);
 
         try {
-            // Verify insurance eligibility
-            const verificationResult = await healthieAPI.verifyInsurance({
-                insurancePlanIds: insuranceData.planId,
+            // Step 1: Create or get client first
+            let client = await healthieAPI.getClientByEmail(bookingData.patient.email);
+
+            if (!client) {
+                client = await healthieAPI.createClient({
+                    first_name: bookingData.patient.firstName,
+                    last_name: bookingData.patient.lastName,
+                    email: bookingData.patient.email,
+                    phone: bookingData.patient.phone,
+                    dob: bookingData.patient.dateOfBirth,
+                    provider_id: bookingData.appointment.providerId.toString()
+                });
+            }
+            const policyResult = await healthieAPI.createPolicy({
+                userId: client.id,
+                insurancePlanId: insuranceData.planId,
+                memberId: insuranceData.memberId,
+                groupNumber: insuranceData.groupNumber,
+                holderDob: insuranceData.m_dob,  // This is required!
+                holderFirstName: insuranceData.relationshipToInsured === 'self'
+                    ? bookingData.patient.firstName
+                    : insuranceData.holderFirstName,
+                holderLastName: insuranceData.relationshipToInsured === 'self'
+                    ? bookingData.patient.lastName
+                    : insuranceData.holderLastName,
+                holderRelationship: insuranceData.relationshipToInsured,
+                holderAddress: insuranceData.holderAddress || bookingData.patient.address,
+                isPrimary: true,
+                effectiveStart: new Date().toISOString().split('T')[0] // Today's date
             });
 
-            if (verificationResult) {
+            // Step 2: Run eligibility check with client ID and proper service codes
+            const serviceCodes = getServiceCodeForAppointment(
+                bookingData.service?.type,
+                bookingData.service?.name
+            );
+            const eligibilityResult = await healthieAPI.runEligibilityCheck({
+                policyId: policyResult.policies[0]?.id,
+                serviceCodes: "claim_md"
+            });
+
+            // Step 3: Process eligibility response with enhanced error handling
+            const eligibilityResponse = handleEligibilityResponse(eligibilityResult.data);
+
+            console.log("eligibilityResponse", eligibilityResponse);
+            if (eligibilityResponse.eligible) {
+                const eligibilityCheck = eligibilityResponse.eligibilityCheck;
+                const response = eligibilityCheck.eligibilityResponse;
+
+                // Extract comprehensive benefit information
+                const benefits = response.benefits || [];
+                const primaryBenefit = benefits.find(b =>
+                    b.category === serviceCodes ||
+                    b.category === 'OUTPATIENT' ||
+                    b.category === 'GENERAL'
+                ) || benefits[0];
+
                 setInsuranceData(prev => ({
                     ...prev,
+                    clientId: client.id,
                     verified: true,
-                    copayAmount: verificationResult.copay_amount,
-                    coverageAmount: verificationResult.coverage_amount || (bookingData.service?.pricing)
+                    eligibilityStatus: eligibilityCheck.status,
+                    eligibilityId: eligibilityCheck.id,
+                    copayAmount: response.copay || primaryBenefit?.copay || 0,
+                    deductible: response.deductible || primaryBenefit?.deductible || 0,
+                    coinsurance: response.coinsurance || primaryBenefit?.coinsurance || 0,
+                    coveragePercentage: primaryBenefit?.coveragePercentage || null,
+                    coverageAmount: bookingData.service?.pricing - (response.copay || primaryBenefit?.copay || 0),
+                    benefits: benefits,
+                    eligibilityMessages: eligibilityResponse.messages
                 }));
-                setCurrentSubStep(1);
+
+                setCurrentSubStep(1); // Move to payment step
+
             } else {
-                setError('Insurance verification failed. You can proceed with self-pay or request a superbill.');
+                // Handle ineligible case
+                setError(`${eligibilityResponse.reason}. You can proceed with self-pay or request a superbill for potential reimbursement.`);
                 setInsuranceData(prev => ({
                     ...prev,
+                    clientId: client.id,
                     verified: false,
-                    billingType: 'self-pay'
+                    billingType: 'self-pay',
+                    eligibilityMessages: eligibilityResponse.messages,
+                    eligibilityId: eligibilityResponse.eligibilityCheck?.id || null
                 }));
             }
+
         } catch (error) {
-            console.error('Insurance verification error:', error);
-            setError('Unable to verify insurance. You can proceed with self-pay.');
+            console.error('Insurance eligibility check error:', error);
+
+            // Provide more specific error messages
+            let errorMessage = 'Unable to verify insurance eligibility at this time.';
+            if (error.message.includes('not found')) {
+                errorMessage = 'Insurance plan or member information not found. Please verify your details.';
+            } else if (error.message.includes('invalid')) {
+                errorMessage = 'Invalid insurance information provided. Please check your details.';
+            } else if (error.message.includes('network')) {
+                errorMessage = 'Network error while verifying insurance. Please check your connection and try again.';
+            }
+
+            setError(`${errorMessage} You can proceed with self-pay or try again later.`);
             setInsuranceData(prev => ({
                 ...prev,
                 verified: false,
@@ -517,16 +668,18 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         }
     };
 
-    // Calculate total amount based on insurance (Ohio only)
+    // Calculate total amount based on insurance (Ohio only) - Enhanced calculation
     const calculateTotalAmount = () => {
         let amount;
         if (isOhioLocation && insuranceData.verified && insuranceData.billingType === 'insurance') {
-            amount = insuranceData.copayAmount;
+            // For insurance billing, patient pays copay
+            amount = insuranceData.copayAmount || 0;
         } else {
-            amount = bookingData.service?.pricing;
+            // For self-pay or superbill, patient pays full amount
+            amount = bookingData.service?.pricing || 0;
         }
-        // Ensure numeric output
-        return parseFloat((amount || '0').replace(/[^0-9.-]/g, ''));
+        // Ensure numeric output and handle string prices
+        return parseFloat((amount.toString()).replace(/[^0-9.-]/g, '')) || 0;
     };
 
     const totalAmount = calculateTotalAmount();
@@ -554,7 +707,6 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
             confirmationCode: 'CONF' + Math.random().toString(36).substr(2, 9).toUpperCase()
         };
 
-
         setTimeout(() => {
             onComplete({
                 appointment: appointmentData,
@@ -568,20 +720,32 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         setError(errorMessage);
     };
 
-    // Render Insurance Step
+    // UPDATED: Enhanced Insurance Step with comprehensive eligibility feedback
     const renderInsuranceStep = () => (
         <Card>
             <CardContent sx={ { p: 4 } }>
                 <Box sx={ { display: 'flex', alignItems: 'center', mb: 3 } }>
                     <HealthAndSafety sx={ { fontSize: 24, color: theme.palette.primary.main, mr: 1 } } />
                     <Typography variant="h6" fontWeight={ 600 }>
-                        Insurance Information
+                        Insurance Information & Real-Time Eligibility Verification
                     </Typography>
                 </Box>
 
                 { error && (
                     <Alert severity="error" sx={ { mb: 3 } } onClose={ () => setError(null) }>
                         { error }
+                    </Alert>
+                ) }
+
+                {/* Show detailed eligibility messages if available */ }
+                { insuranceData.eligibilityMessages?.length > 0 && (
+                    <Alert severity="info" sx={ { mb: 3 } }>
+                        <Typography variant="body2" fontWeight={ 600 }>Eligibility Verification Details:</Typography>
+                        { insuranceData.eligibilityMessages.map((msg, index) => (
+                            <Typography key={ index } variant="body2" sx={ { mt: 0.5 } }>
+                                • { msg.field ? `${msg.field}: ` : '' }{ msg.message }
+                            </Typography>
+                        )) }
                     </Alert>
                 ) }
 
@@ -614,6 +778,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                         required
                                         label='Insurance Provider'
                                         size="small"
+                                        helperText="Select your insurance plan from accepted providers"
                                     >
                                         { insurancePlans.map((plan) => (
                                             <MenuItem key={ plan.id } value={ plan.id }>
@@ -631,6 +796,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                         fullWidth
                                         required
                                         size="small"
+                                        helperText="Found on your insurance card"
                                     />
                                 </Grid>
 
@@ -641,6 +807,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                         onChange={ (e) => setInsuranceData(prev => ({ ...prev, groupNumber: e.target.value })) }
                                         fullWidth
                                         size="small"
+                                        helperText="If applicable, found on your insurance card"
                                     />
                                 </Grid>
 
@@ -660,23 +827,25 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                         <MenuItem value="other">Other</MenuItem>
                                     </TextField>
                                 </Grid>
+
                                 <Grid item size={ { xs: 12, md: 6 } } sx={ { alignContent: "center" } }>
                                     <InputLabel>Member Date of Birth:</InputLabel>
                                 </Grid>
                                 <Grid item size={ { xs: 12, md: 6 } }>
                                     <TextField
-                                        // label="Member Date of Birth"
                                         type='date'
                                         placeholder='Date of Birth'
                                         value={ insuranceData.m_dob }
                                         onChange={ (e) => setInsuranceData(prev => ({ ...prev, m_dob: e.target.value })) }
                                         fullWidth
+                                        required
                                         size="small"
+                                        helperText="Member's date of birth as on insurance card"
                                     />
                                 </Grid>
 
                                 <Grid item xs={ 12 }>
-                                    <Typography variant="subtitle2" fontWeight={ 600 }>Billing Preference</Typography>
+                                    <Typography variant="subtitle2" fontWeight={ 600 } sx={ { mb: 1 } }>Billing Preference</Typography>
                                     <RadioGroup
                                         value={ insuranceData.billingType }
                                         onChange={ (e) => setInsuranceData(prev => ({
@@ -695,7 +864,11 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                 { insuranceData.billingType === 'superbill' && (
                                     <Grid item xs={ 12 }>
                                         <Alert severity="info">
-                                            You'll pay the full amount now and receive a Superbill to submit to your insurance for reimbursement.
+                                            <Typography variant="body2" fontWeight={ 600 }>Superbill Option:</Typography>
+                                            <Typography variant="body2">
+                                                You'll pay the full amount now and receive a detailed Superbill via email to submit to your insurance for reimbursement.
+                                                This option works well if you have out-of-network benefits or prefer to handle reimbursement yourself.
+                                            </Typography>
                                         </Alert>
                                     </Grid>
                                 ) }
@@ -703,7 +876,10 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                 { insuranceData.billingType === 'insurance' && (
                                     <Grid item xs={ 12 }>
                                         <Alert severity="info">
-                                            We'll verify your coverage and bill your insurance directly. You may only need to pay a copay.
+                                            <Typography variant="body2" fontWeight={ 600 }>Direct Insurance Billing:</Typography>
+                                            <Typography variant="body2">
+                                                We'll verify your coverage in real-time and bill your insurance directly. You'll only pay your copay amount if your plan is active and covers this service.
+                                            </Typography>
                                         </Alert>
                                     </Grid>
                                 ) }
@@ -713,17 +889,20 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                         type="submit"
                                         variant="contained"
                                         size="large"
-                                        disabled={ loading }
+                                        disabled={ loading || !insuranceData.planId || !insuranceData.memberId || !insuranceData.m_dob }
                                         fullWidth
                                         sx={ { py: 1.5, color: "white" } }
                                     >
                                         { loading ? (
                                             <>
                                                 <CircularProgress size={ 20 } sx={ { mr: 1, color: 'white' } } />
-                                                Verifying Insurance...
+                                                Verifying Insurance Eligibility...
                                             </>
                                         ) : (
-                                            'Apply for Insurance & Continue'
+                                            <>
+                                                <HealthAndSafety sx={ { mr: 1, fontSize: 20 } } />
+                                                Verify Insurance Eligibility & Continue
+                                            </>
                                         ) }
                                     </Button>
                                 </Grid>
@@ -748,7 +927,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         </Card>
     );
 
-    // Render Payment Step
+    // UPDATED: Enhanced Payment Step with detailed eligibility results and coverage breakdown
     const renderPaymentStep = () => (
         <Card sx={ { maxWidth: { xs: '100%', md: 800 }, mx: 'auto' } }>
             <CardContent sx={ { p: { xs: 2, sm: 3, md: 4 } } }>
@@ -761,16 +940,46 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                             </Typography>
                         </Box>
 
-                        {/* Show insurance success if verified - only for Ohio */ }
+                        {/* UPDATED: Comprehensive insurance verification display */ }
                         { isOhioLocation && insuranceData.verified && insuranceData.billingType === 'insurance' && (
                             <Alert severity="success" sx={ { mb: 3 } }>
-                                Insurance verified! Your copay amount is { bookingData.service.pricing }
+                                <Typography variant="body2" fontWeight={ 600 }>✓ Insurance Eligibility Verified Successfully!</Typography>
+                                <Box sx={ { mt: 1 } }>
+                                    <Typography variant="caption" display="block">
+                                        <strong>Your copay:</strong> ${ insuranceData.copayAmount || 0 }
+                                    </Typography>
+                                    { insuranceData.deductible > 0 && (
+                                        <Typography variant="caption" display="block">
+                                            <strong>Deductible:</strong> ${ insuranceData.deductible }
+                                        </Typography>
+                                    ) }
+                                    { insuranceData.coinsurance > 0 && (
+                                        <Typography variant="caption" display="block">
+                                            <strong>Coinsurance:</strong> { insuranceData.coinsurance }%
+                                        </Typography>
+                                    ) }
+                                    { insuranceData.benefits?.map((benefit, index) => (
+                                        <Typography key={ index } variant="caption" display="block" sx={ { mt: 0.5 } }>
+                                            <strong>{ benefit.category }:</strong>
+                                            { benefit.coveragePercentage && ` ${benefit.coveragePercentage}% covered` }
+                                            { benefit.copay && ` | Copay: $${benefit.copay}` }
+                                            { benefit.deductible && ` | Deductible: $${benefit.deductible}` }
+                                        </Typography>
+                                    )) }
+                                    <Typography variant="caption" display="block" sx={ { mt: 1, fontStyle: 'italic' } }>
+                                        Claim will be submitted automatically to your insurance.
+                                    </Typography>
+                                </Box>
                             </Alert>
                         ) }
 
                         { isOhioLocation && insuranceData.requestSuperbill && (
                             <Alert severity="info" sx={ { mb: 3 } }>
-                                A Superbill will be emailed to you after payment for insurance reimbursement.
+                                <Typography variant="body2" fontWeight={ 600 }>Superbill Reimbursement</Typography>
+                                <Typography variant="body2">
+                                    A detailed Superbill will be emailed to you after payment for insurance reimbursement.
+                                    This includes all necessary codes and provider information for your claim submission.
+                                </Typography>
                             </Alert>
                         ) }
 
@@ -818,12 +1027,20 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                 </Grid>
 
                                 { isOhioLocation && insuranceData.hasInsurance && (
-                                    <Grid item size={ { xs: 12, sm: 6 } }>
-                                        <Typography variant="body2" color="textSecondary">Insurance:</Typography>
-                                        <Typography variant="body2" fontWeight={ 500 }>
-                                            { insurancePlans.find(p => p.id === insuranceData.planId)?.name_and_id || 'Selected' }
-                                        </Typography>
-                                    </Grid>
+                                    <>
+                                        <Grid item size={ { xs: 12, sm: 6 } }>
+                                            <Typography variant="body2" color="textSecondary">Insurance:</Typography>
+                                            <Typography variant="body2" fontWeight={ 500 }>
+                                                { insurancePlans.find(p => p.id === insuranceData.planId)?.name_and_id || 'Selected' }
+                                            </Typography>
+                                        </Grid>
+                                        <Grid item size={ { xs: 12, sm: 6 } }>
+                                            <Typography variant="body2" color="textSecondary">Member ID:</Typography>
+                                            <Typography variant="body2" fontWeight={ 500 }>
+                                                { insuranceData.memberId }
+                                            </Typography>
+                                        </Grid>
+                                    </>
                                 ) }
                             </Grid>
 
@@ -833,12 +1050,12 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                 <>
                                     <Box sx={ { display: 'flex', justifyContent: 'space-between', mb: 1 } }>
                                         <Typography variant="body2">Service Fee:</Typography>
-                                        <Typography variant="body2">{ bookingData.service?.pricing || 0 }</Typography>
+                                        <Typography variant="body2">${ bookingData.service?.pricing || 0 }</Typography>
                                     </Box>
                                     <Box sx={ { display: 'flex', justifyContent: 'space-between', mb: 1 } }>
                                         <Typography variant="body2" color="success.main">Insurance Coverage:</Typography>
                                         <Typography variant="body2" color="success.main">
-                                            -{ insuranceData.coverageAmount || (bookingData.service?.pricing) }
+                                            -${ insuranceData.coverageAmount || (bookingData.service?.pricing - (insuranceData.copayAmount || 0)) }
                                         </Typography>
                                     </Box>
                                     <Divider sx={ { my: 1 } } />
@@ -864,7 +1081,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                         {/* Payment Form */ }
                         <Box sx={ { border: '1px solid #e0e0e0', borderRadius: 2, p: { xs: 2, sm: 3 } } }>
                             <Typography variant="subtitle1" fontWeight={ 600 } gutterBottom>
-                                { totalAmount > 0 || !isOhioLocation ? 'Payment Information' : 'Confirm Insurance Claim' }
+                                { totalAmount > 0 || !isOhioLocation ? 'Payment Information' : 'Confirm Insurance Claim Submission' }
                             </Typography>
 
                             <Elements stripe={ stripePromise }>
@@ -881,7 +1098,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                         </Box>
                     </>
                 ) : (
-                    // Success State
+                    // Enhanced Success State
                     <Box sx={ { textAlign: 'center', py: 4 } }>
                         <Box sx={ {
                             width: 80,
@@ -899,17 +1116,17 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                         <Typography variant="h5" fontWeight={ 600 } color="success.main" gutterBottom>
                             { totalAmount > 0 ? 'Payment Successful!' : 'Appointment Confirmed!' }
                         </Typography>
-                        <Typography variant="body1" color="textSecondary">
-                            Your appointment has been confirmed.
+                        <Typography variant="body1" color="textSecondary" sx={ { mb: 2 } }>
+                            Your appointment has been confirmed and you'll receive a confirmation email shortly.
                         </Typography>
                         { isOhioLocation && insuranceData.verified && insuranceData.billingType === 'insurance' && (
                             <Typography variant="body2" color="textSecondary" sx={ { mt: 1 } }>
-                                Insurance claim will be processed automatically.
+                                ✓ Insurance claim will be processed automatically through our ClaimMD integration.
                             </Typography>
                         ) }
                         { isOhioLocation && insuranceData.requestSuperbill && (
                             <Typography variant="body2" color="textSecondary" sx={ { mt: 1 } }>
-                                Superbill has been emailed to you for insurance reimbursement.
+                                ✓ Superbill has been emailed to you for insurance reimbursement.
                             </Typography>
                         ) }
                         <CircularProgress sx={ { mt: 2 } } size={ 24 } />
@@ -924,7 +1141,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
 
     // Sub-step labels - only include insurance step for Ohio
     const subStepLabels = isOhioLocation
-        ? ['Insurance Information', 'Payment Confirmation']
+        ? ['Insurance Eligibility Verification', 'Payment Confirmation']
         : ['Payment Confirmation'];
 
     return (
