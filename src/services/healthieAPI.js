@@ -1,6 +1,6 @@
 class HealthieAPI {
   constructor () {
-    this.baseURL = 'https://healthie-custom-appointment-app.vercel.app/api/healthie';
+    this.baseURL = '/api/healthie';
     // this.apiKey = process.env.REACT_APP_HEALTHIE_TOKEN;
   }
   // gh_live_xdD0KLeNnMF1OnaApr9CHUp11bYUUKJxnXQZ5F5xK8IaLOn8rzoQ61oEAQVi47hD	   client key
@@ -251,6 +251,7 @@ query  {
                     pricing
                   client_display_name
                   clients_can_book
+                  bookable_by_groups
                   insurance_billing_enabled
                   valid_state_licensing_for
 price_and_cpt_price{
@@ -493,32 +494,109 @@ price_and_cpt_price{
 
   async runEligibilityCheck({ policyId, serviceCodes }) {
     const mutation = `
-        mutation RunEligibilityCheck($id: ID!, $eligibility_check_service: EligibilityCheckService!) {
-            runEligibilityCheck(input: {id: $id, eligibility_check_service: $eligibility_check_service}) {
-                eligibility_check {
-                    id
-                    policy {
-                        id
-                        name
-                        payer_location {
-                            line1
-                            city
-                            state
-                            zip
-                        }
-                        benefits {
-                            category
-                            copay
-                            coinsurance
-                        }
-                    }
-                }
-                messages {
-                    field
-                    message
-                }
-            }
+       mutation runEligibilityCheck(
+  $id: ID
+  $eligibility_check_service: EligibilityCheckService
+) {
+  runEligibilityCheck(
+    input: {
+      id: $id
+      eligibility_check_service: $eligibility_check_service
+    }
+  ) {
+    eligibility_check {
+      id
+      created_at
+      policy_id
+      policy {
+        id
+        name
+        num
+        group_num
+        updated_at
+        notes
+        referral_required
+        dob_to_use
+        latest_eligibility_check {
+          id
+          created_at
+          response_as_html
+          __typename
         }
+        benefits {
+          id
+          copay
+          coinsurance
+          deductible_year_to_date
+          deductible_calendar_year
+          category
+          telemedicine
+          __typename
+        }
+        referral {
+          id
+          referring_physician {
+            id
+            first_name
+            last_name
+            __typename
+          }
+          __typename
+        }
+        insurance_authorization_required
+        insurance_plan {
+          id
+          payer_id
+          payer_name
+          __typename
+        }
+        insurance_authorization {
+          id
+          authorization_number
+          visits_authorized
+          visits_used
+          units_authorized
+          units_used
+          unit_type
+          start_on
+          end_on
+          updated_at
+          __typename
+        }
+        icd_codes_policies {
+          id
+          code
+          icd_code_id
+          policy_id
+          __typename
+        }
+        cpt_codes_policies {
+          id
+          code
+          cpt_code_id
+          policy_id
+          __typename
+        }
+        call_reference {
+          id
+          date_recorded
+          time_recorded
+          notes
+          reference_number
+          __typename
+        }
+        __typename
+      }
+      __typename
+    }
+    messages {
+      field
+      message
+      __typename
+    }
+    __typename
+  }
+}
     `;
 
     const variables = {
@@ -1817,6 +1895,80 @@ price_and_cpt_price{
     return await this.graphqlRequest(mutation, variables);
   }
 
+
+  // Enhanced claim submission with coverage amounts
+  // Enhanced claim submission for ClaimSubmission API
+  async submitClaim(data) {
+    const mutation = `
+      mutation uploadCms1500sToIntegrations(
+  $cms1500_id: ID
+  $cms1500_ids: [ID]
+  $destination_integration: ClaimDestinationIntegration
+) {
+  uploadCms1500sToIntegrations(
+    input: {
+      cms1500_id: $cms1500_id
+      cms1500_ids: $cms1500_ids
+      destination_integration: $destination_integration
+    }
+  ) {
+    success_message
+    cms1500s {
+      id
+      status
+      __typename
+    }
+    messages {
+      field
+      message
+      __typename
+    }
+    __typename
+  }
+}
+    `;
+
+    return await this.graphqlRequest(mutation, data);
+  }
+
+  // Get ClaimSubmission status and data
+  async getClaimSubmissionStatus(claimSubmissionId) {
+    const query = `
+        query getClaimSubmission($id: ID!) {
+            claimSubmission(id: $id) {
+                id
+                claim_data
+                cms1500_id
+                created_at
+                integration {
+                    id
+                    name
+                    type
+                }
+                integration_formatted_claim_data
+                pcn
+            }
+        }
+    `;
+
+    return await this.graphqlRequest(query, { id: claimSubmissionId });
+  }
+  // Get claim status from ClaimMD
+  async getClaimStatus(submissionId) {
+    const query = `
+        query getClaimStatus($submission_id: ID!) {
+            claimStatus(submission_id: $submission_id) {
+                status
+                last_updated
+                payer_response
+                payment_amount
+                rejection_reason
+            }
+        }
+    `;
+
+    return await this.graphqlRequest(query, { submission_id: submissionId });
+  }
   /**
    * Update CMS1500 claim status
    */

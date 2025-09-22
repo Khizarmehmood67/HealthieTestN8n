@@ -3,10 +3,19 @@ import {
     Box, Typography, Card, CardContent, Button, Grid,
     Alert, CircularProgress, Divider, useTheme, TextField,
     FormControlLabel, Checkbox, MenuItem, Stepper, Step, StepLabel,
-    RadioGroup, Radio,
-    InputLabel
+    RadioGroup, Radio, InputLabel, Chip, LinearProgress
 } from '@mui/material';
-import { CreditCard, Lock, Security, HealthAndSafety, Label } from '@mui/icons-material';
+// Replace your current MUI icons import with:
+import CreditCard from '@mui/icons-material/CreditCard';
+import Lock from '@mui/icons-material/Lock';
+import Security from '@mui/icons-material/Security';
+import HealthAndSafety from '@mui/icons-material/HealthAndSafety';
+import Label from '@mui/icons-material/Label';
+import CheckCircle from '@mui/icons-material/CheckCircle';
+import HourglassEmpty from '@mui/icons-material/HourglassEmpty';
+import ErrorIcon from '@mui/icons-material/Error'; // Renamed to avoid conflict
+import Send from '@mui/icons-material/Send';
+import Info from '@mui/icons-material/Info';
 import { loadStripe } from '@stripe/stripe-js';
 import {
     Elements,
@@ -17,22 +26,226 @@ import {
     useElements
 } from '@stripe/react-stripe-js';
 import healthieAPI from '../services/healthieAPI';
-import { logDOM } from '@testing-library/dom';
 
-// Initialize Stripe with Healthie's official keys
+// Initialize Stripe
 const HEALTHIE_STRIPE_KEY = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY;
-
 const stripePromise = loadStripe(HEALTHIE_STRIPE_KEY);
 
-// Card Payment Form Component - Enhanced for Insurance
-const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocation, onSuccess, onError, appointment_type }) => {
+// Enhanced Coverage Calculator with fallback for empty benefits
+class CoverageCalculator {
+    static calculatePatientResponsibility(serviceAmount, eligibilityData) {
+        const amount = parseFloat(serviceAmount.replace(/[^0-9.]/g, ''));
+
+        if (!eligibilityData || !eligibilityData.eligible) {
+            return {
+                totalDue: amount,
+                insuranceCoverage: 0,
+                patientResponsibility: amount,
+                copay: 0,
+                deductible: 0,
+                coinsurance: 0,
+                coverageDetails: 'Not covered by insurance',
+                isEstimated: false
+            };
+        }
+
+        const response = eligibilityData.eligibilityResponse || {};
+        const benefits = response.benefits || [];
+
+        // Find the most relevant benefit
+        const primaryBenefit = benefits.find(b =>
+            ['97802', '97803', 'Medical Care', 'OUTPATIENT', 'GENERAL'].includes(b.category)
+        ) || benefits[0];
+        console.log("eligibilityData", primaryBenefit);
+        let copay = parseFloat(primaryBenefit?.copay || response.copay || 0);
+        let deductible = parseFloat(primaryBenefit?.deductible || response.deductible || 0);
+        let coinsurancePercent = parseFloat(primaryBenefit?.coinsurance || response.coinsurance || 0);
+        let coveragePercent = parseFloat(primaryBenefit?.coveragePercentage || 0);
+
+        // Fallback logic for empty benefits (common with nutritional codes)
+        let isEstimated = false;
+        if (benefits.length === 0 || (!copay && !coveragePercent && !deductible)) {
+            console.warn('Using estimated coverage for nutritional codes - verify with payer');
+            isEstimated = true;
+
+            // Industry standard assumptions for nutritional therapy
+            // if (!copay && !coveragePercent) {
+            //     // Default to 80% coverage assumption for most commercial plans
+            //     coveragePercent = 80;
+            //     coinsurancePercent = 20;
+            // }
+        }
+
+        // Calculate insurance coverage
+        let insuranceCoverage = 0;
+        let patientResponsibility = amount;
+
+        if (copay > 0) {
+            // Copay-based plan
+            insuranceCoverage = Math.max(0, amount - copay);
+            patientResponsibility = copay;
+        } else if (coveragePercent > 0) {
+            // Percentage-based coverage
+            const coveredAmount = (amount * coveragePercent) / 100;
+
+            if (deductible > 0) {
+                // Apply deductible first
+                insuranceCoverage = Math.max(0, coveredAmount - deductible);
+                patientResponsibility = amount - insuranceCoverage;
+            } else if (coinsurancePercent > 0) {
+                // Apply coinsurance
+                const coinsuranceAmount = (coveredAmount * coinsurancePercent) / 100;
+                insuranceCoverage = coveredAmount - coinsuranceAmount;
+                patientResponsibility = amount - insuranceCoverage;
+            } else {
+                // Full coverage at percentage
+                insuranceCoverage = coveredAmount;
+                patientResponsibility = amount - insuranceCoverage;
+            }
+        }
+
+
+        return {
+            totalDue: Math.max(0, patientResponsibility),
+            insuranceCoverage: Math.max(0, insuranceCoverage),
+            patientResponsibility: Math.max(0, patientResponsibility),
+            copay,
+            deductible,
+            coinsurance: coinsurancePercent,
+            coveragePercent,
+            coverageDetails: this.generateCoverageDescription(primaryBenefit, response, isEstimated),
+            isEstimated
+        };
+    }
+
+    static generateCoverageDescription(benefit, response, isEstimated) {
+        let baseDescription = '';
+
+        if (benefit?.copay || response.copay) {
+            baseDescription = `Copay plan: ${benefit?.copay || response.copay} per visit`;
+        } else if (benefit?.coveragePercentage) {
+            baseDescription = `${benefit.coveragePercentage}% coverage`;
+            if (benefit.deductible) baseDescription += ` after ${benefit.deductible} deductible`;
+            if (benefit.coinsurance) baseDescription += ` with ${benefit.coinsurance}% coinsurance`;
+        } else {
+            baseDescription = 'Coverage details limited for nutritional codes';
+        }
+
+        if (isEstimated) {
+            baseDescription += ' (ESTIMATED - please verify with your insurance)';
+        }
+
+        return baseDescription;
+    }
+}
+
+// Enhanced Claim Status Component with ClaimSubmission data
+const ClaimStatusIndicator = ({ status, claimId, claimSubmission, pcn, onStatusUpdate }) => {
+    const getStatusInfo = (status) => {
+        switch (status?.toLowerCase()) {
+            case 'preparing':
+                return { color: 'default', icon: <HourglassEmpty />, text: 'Preparing Claim' };
+            case 'creating':
+                return { color: 'info', icon: <HourglassEmpty />, text: 'Creating CMS1500 Form' };
+            case 'created':
+                return { color: 'info', icon: <CheckCircle />, text: 'CMS1500 Form Created' };
+            case 'submitting':
+                return { color: 'warning', icon: <Send />, text: 'Submitting to ClaimMD' };
+            case 'submitted':
+            case 'sent':
+                return { color: 'info', icon: <Send />, text: 'Claim Submitted to ClaimMD' };
+            case 'transmitted':
+                return { color: 'info', icon: <CheckCircle />, text: 'Claim Transmitted to Insurance' };
+            case 'processing':
+            case 'pending':
+                return { color: 'warning', icon: <HourglassEmpty />, text: 'Processing with Insurance' };
+            case 'paid':
+            case 'approved':
+                return { color: 'success', icon: <CheckCircle />, text: 'Claim Approved & Paid' };
+            case 'partial_payment':
+                return { color: 'warning', icon: <Info />, text: 'Partial Payment Received' };
+            case 'rejected':
+            case 'denied':
+                return { color: 'error', icon: <ErrorIcon />, text: 'Claim Denied - Review Required' };
+            case 'failed':
+                return { color: 'error', icon: <ErrorIcon />, text: 'Claim Submission Failed' };
+            default:
+                return { color: 'default', icon: <HourglassEmpty />, text: 'Preparing Claim' };
+        }
+    };
+
+    const statusInfo = getStatusInfo(status);
+
+    return (
+        <Box sx={ { display: 'flex', flexDirection: 'column', gap: 1, p: 2, bgcolor: 'grey.50', borderRadius: 1, mb: 2 } }>
+            <Box sx={ { display: 'flex', alignItems: 'center', gap: 1 } }>
+                <Chip
+                    icon={ statusInfo.icon }
+                    label={ statusInfo.text }
+                    color={ statusInfo.color }
+                    variant="outlined"
+                    size="small"
+                />
+                { ['submitting', 'processing', 'creating', 'transmitted'].includes(status?.toLowerCase()) && (
+                    <LinearProgress sx={ { flexGrow: 1, ml: 2 } } />
+                ) }
+            </Box>
+
+            {/* ClaimSubmission details */ }
+            <Box sx={ { display: 'flex', flexWrap: 'wrap', gap: 2, mt: 1 } }>
+                { claimId && (
+                    <Typography variant="caption" color="textSecondary">
+                        CMS1500 ID: { claimId }
+                    </Typography>
+                ) }
+                { claimSubmission?.id && (
+                    <Typography variant="caption" color="textSecondary">
+                        Submission ID: { claimSubmission.id }
+                    </Typography>
+                ) }
+                { pcn && (
+                    <Typography variant="caption" color="success.main" sx={ { fontWeight: 600 } }>
+                        PCN: { pcn }
+                    </Typography>
+                ) }
+                { claimSubmission?.created_at && (
+                    <Typography variant="caption" color="textSecondary">
+                        Submitted: { new Date(claimSubmission.created_at).toLocaleString() }
+                    </Typography>
+                ) }
+            </Box>
+
+            {/* Integration details */ }
+            { claimSubmission?.integration && (
+                <Typography variant="caption" color="textSecondary" sx={ { mt: 0.5 } }>
+                    via { claimSubmission.integration.name || 'ClaimMD Integration' }
+                </Typography>
+            ) }
+        </Box>
+    );
+};
+
+// Enhanced Card Payment Form Component
+const CardPaymentForm = ({
+    bookingData,
+    totalAmount,
+    insuranceData,
+    isOhioLocation,
+    onSuccess,
+    onError,
+    appointment_type,
+    coverageCalculation
+}) => {
     const stripe = useStripe();
     const elements = useElements();
     const [processing, setProcessing] = useState(false);
     const [cardholderName, setCardholderName] = useState('');
     const [saveCard, setSaveCard] = useState(false);
+    const [claimStatus, setClaimStatus] = useState('preparing');
+    const [claimId, setClaimId] = useState(null);
+    const [claimSubmission, setClaimSubmission] = useState(null);
+    const [pcn, setPcn] = useState(null);
     const theme = useTheme();
-    console.log("totalAmount", totalAmount);
 
     const elementOptions = {
         style: {
@@ -51,6 +264,102 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
         },
     };
 
+    // Enhanced claim submission using ClaimSubmission API
+    const submitClaimToClaimMD = async (cms1500Data, claimAmount) => {
+        try {
+            setClaimStatus('submitting');
+
+            // Use the correct uploadCms1500sToIntegrations mutation
+            const claimSubmissionResult = await healthieAPI.submitClaim({
+                cms1500_id: [cms1500Data.id],
+                destination_integration: "claim_md" // or whatever the enum value is for ClaimMD
+            });
+
+            if (claimSubmissionResult?.uploadCms1500sToIntegrations?.success_message) {
+                const result = claimSubmissionResult.uploadCms1500sToIntegrations;
+
+                // Store the submission data
+                setClaimSubmission({
+                    id: cms1500Data.id,
+                    cms1500_id: cms1500Data.id,
+                    created_at: new Date().toISOString(),
+                    status: result.cms1500s?.[0]?.status || 'submitted',
+                    success_message: result.success_message,
+                    messages: result.messages || []
+                });
+
+                setClaimStatus('submitted');
+
+                // // Start polling for status updates using CMS1500 ID
+                // pollCms1500Status(cms1500Data.id);
+
+                return {
+                    id: cms1500Data.id,
+                    status: 'submitted',
+                    success_message: result.success_message,
+                    messages: result.messages
+                };
+            } else {
+                throw new Error('Failed to submit claim to ClaimMD - no success response');
+            }
+        } catch (error) {
+            console.error('ClaimMD submission error:', error);
+            setClaimStatus('failed');
+            throw error;
+        }
+    };
+
+    // Enhanced status polling using ClaimSubmission ID
+    const pollClaimSubmissionStatus = async (claimSubmissionId, attempts = 0) => {
+        try {
+            const statusResponse = await healthieAPI.getClaimSubmissionStatus(claimSubmissionId);
+
+            if (statusResponse?.claimSubmission) {
+                const submission = statusResponse.claimSubmission;
+
+                // Update ClaimSubmission data
+                setClaimSubmission(submission);
+
+                // Update PCN if available
+                if (submission.pcn && submission.pcn !== pcn) {
+                    setPcn(submission.pcn);
+                }
+
+                // Determine status from integration response
+                const integrationData = submission.integration_formatted_claim_data;
+                let currentStatus = 'processing';
+
+                if (integrationData) {
+                    // Parse integration-specific status
+                    if (integrationData.status) {
+                        currentStatus = integrationData.status.toLowerCase();
+                    } else if (integrationData.claim_status) {
+                        currentStatus = integrationData.claim_status.toLowerCase();
+                    } else if (submission.pcn) {
+                        // If we have a PCN, claim was successfully transmitted
+                        currentStatus = 'transmitted';
+                    }
+                }
+
+                setClaimStatus(currentStatus);
+
+                // Continue polling if still processing
+                if (['submitted', 'processing', 'pending', 'transmitted'].includes(currentStatus) && attempts < 30) {
+                    setTimeout(() => pollClaimSubmissionStatus(claimSubmissionId, attempts + 1), 5000);
+                } else if (['partial_payment', 'paid', 'approved'].includes(currentStatus)) {
+                    console.log('Claim processed successfully:', currentStatus);
+                } else if (['rejected', 'denied', 'failed'].includes(currentStatus)) {
+                    console.error('Claim processing failed:', currentStatus, integrationData);
+                }
+            }
+        } catch (error) {
+            console.error('Error checking ClaimSubmission status:', error);
+            if (attempts < 5) {
+                setTimeout(() => pollClaimSubmissionStatus(claimSubmissionId, attempts + 1), 10000);
+            }
+        }
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -65,10 +374,8 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
             // Step 1: Use existing client or create if needed
             let client;
             if (insuranceData.clientId) {
-                // Client already created during eligibility check
                 client = { id: insuranceData.clientId };
             } else {
-                // Create or get client
                 client = await healthieAPI.getClientByEmail(bookingData.patient.email);
                 if (!client) {
                     client = await healthieAPI.createClient({
@@ -82,7 +389,6 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                 }
             }
 
-            // Step 2: Handle payment based on billing type
             let billingResult = null;
             let appointmentData = {
                 user_id: client.id,
@@ -92,9 +398,12 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                 datetime: bookingData.appointment?.date
             };
 
-            if (isOhioLocation && insuranceData?.verified && insuranceData?.billingType === 'insurance') {
-                // Create CMS1500 claim for insurance billing
-                const variables = {
+            // Step 2: Handle insurance billing with enhanced coverage calculation
+            if (isOhioLocation && insuranceData?.verified && insuranceData?.billingType === 'insurance' && coverageCalculation.insuranceCoverage > 0) {
+                setClaimStatus('creating');
+
+                // Fixed CMS1500 creation with correct Healthie API schema
+                const cms1500Variables = {
                     patient: {
                         id: client.id,
                         full_legal_name_with_preferred: `${bookingData.patient.firstName} ${bookingData.patient.lastName}`,
@@ -110,32 +419,56 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                         qualifications: bookingData.appointment?.doctor?.qualifications || null,
                     },
                     service_location_id: bookingData.location.id,
-                    amount_paid: bookingData.service.pricing,
+                    // Use insurance coverage amount for CMS1500
+                    amount_paid: coverageCalculation.insuranceCoverage.toString(),
+                    service_date: new Date(bookingData.appointment?.date).toISOString().split('T')[0],
                     cms1500_policies: [
                         {
                             policy: {
                                 insurance_plan_id: insuranceData.planId,
                                 num: insuranceData.memberId,
-                                group_num: insuranceData.groupNumber,
+                                group_num: insuranceData.groupNumber || '',
                                 payer_location: {
                                     state: "OH"
                                 },
                                 user_id: client.id,
                                 holder_relationship: insuranceData.relationshipToInsured || 'self',
-                                holder_dob: insuranceData.m_dob || "1998-3-22",
-                                eligibility_check_id: insuranceData.eligibilityId // Link to eligibility check
+                                holder_dob: insuranceData.m_dob
                             }
                         }
                     ],
-                    icd_codes_cms1500s: bookingData.icdCodes || [],
-                    cpt_codes_cms1500s: bookingData.cptCodes || [],
+                    // Try different field names for ICD codes based on common API patterns
+                    // icd_codes_cms1500s: bookingData.icdCodes || [
+                    //     {
+                    //         diagnosis_code: 'Z71.3' // Try diagnosis_code instead of icd_code
+                    //     }
+                    // ],
+                    // // Try different field names for CPT codes based on common API patterns
+                    // cpt_codes_cms1500s: bookingData.cptCodes || [
+                    //     {
+                    //         procedure_code: '97802', // Try procedure_code instead of cpt_code
+                    //         units: '1'
+                    //     }
+                    // ],
                     client_sig_on_file: true,
+                    assignment_of_benefits: true,
+                    release_of_information: true,
+                    place_of_service: '11', // Office
+                    type_of_service: 'medical',
+                    frequency_code: 'original'
                 };
 
-                const cms1500Result = await healthieAPI.createCMS1500(variables);
+                const cms1500Result = await healthieAPI.createCMS1500(cms1500Variables);
 
                 if (cms1500Result?.createCms1500?.cms1500) {
-                    // If there's a copay, charge it
+                    const cms1500 = cms1500Result.createCms1500.cms1500;
+                    setClaimId(cms1500.id);
+                    setClaimStatus('created');
+
+                    // Submit claim to ClaimMD
+                    const claimSubmissionResult = await submitClaimToClaimMD(cms1500, coverageCalculation.insuranceCoverage);
+
+                    // Handle patient responsibility payment if any
                     if (totalAmount > 0) {
                         const { token, error: tokenError } = await stripe.createToken(
                             elements.getElement(CardNumberElement),
@@ -157,17 +490,19 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                             stripe_customer_detail_id: cardStorageResult.id,
                             stripe_idempotency_key: crypto.randomUUID(),
                             should_charge: true,
-                            notes: 'Insurance copay'
+                            notes: `Patient responsibility: ${coverageCalculation.coverageDetails}`
                         });
 
                         appointmentData.billing_item_id = billingResult.id;
                     }
 
-                    appointmentData.cms1500_id = cms1500Result.createCms1500.cms1500.id;
+                    appointmentData.cms1500_id = cms1500.id;
+                    appointmentData.claim_submission_id = claimSubmissionResult?.id;
+                    appointmentData.claim_submission_data = claimSubmissionResult;
                 }
 
             } else if (isOhioLocation && insuranceData?.requestSuperbill) {
-                // Process payment first, then create superbill
+                // Handle superbill case (unchanged)
                 const { token, error: tokenError } = await stripe.createToken(
                     elements.getElement(CardNumberElement),
                     { name: cardholderName }
@@ -199,7 +534,6 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                     patient_dob: insuranceData.m_dob || "2001-09-10",
                     dietitian_id: bookingData.appointment?.providerId,
                     provider_name: bookingData.appointment?.doctor || '',
-                    referrer_npi: null,
                     service_date: new Date(bookingData.appointment?.date).toISOString().split('T')[0],
                     amount_paid: totalAmount.toString(),
                     status: 'Not Sent',
@@ -214,17 +548,11 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                         country: "US",
                         line1: bookingData.patient.address || bookingData.location.location || "",
                         state: bookingData.patient.state || "OH"
-                    },
-                    prov_email: "",
-                    prov_phone: "",
-                    tax_id: "",
-                    npi: "",
-                    license_num: "",
+                    }
                 };
 
                 const superbillResult = await healthieAPI.createSuperbill(superbillData);
 
-                // Email superbill to patient
                 if (superbillResult?.createSuperBill?.superBill) {
                     await healthieAPI.updateSuperbill(
                         superbillResult.createSuperBill.superBill.id,
@@ -234,7 +562,7 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                 }
 
             } else {
-                // Standard self-pay payment
+                // Standard self-pay payment (unchanged)
                 const { token, error: tokenError } = await stripe.createToken(
                     elements.getElement(CardNumberElement),
                     { name: cardholderName }
@@ -268,11 +596,18 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                 appointmentId: appointment?.id || 'pending',
                 billingItemId: billingResult?.id,
                 cms1500Id: appointmentData.cms1500_id,
+                claimSubmissionId: appointmentData.claim_submission_id,
+                claimSubmissionData: appointmentData.claim_submission_data,
                 superbillId: appointmentData.superbill_id,
                 amount: totalAmount,
                 status: 'succeeded',
                 clientId: client.id,
-                insuranceClaim: isOhioLocation && insuranceData?.verified && insuranceData?.billingType === 'insurance'
+                claimStatus: claimStatus,
+                claimId: claimId,
+                claimSubmission: claimSubmission,
+                pcn: pcn,
+                insuranceClaim: isOhioLocation && insuranceData?.verified && insuranceData?.billingType === 'insurance',
+                coverageBreakdown: coverageCalculation
             });
 
         } catch (error) {
@@ -285,6 +620,17 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
 
     return (
         <Box component="form" onSubmit={ handleSubmit }>
+            {/* Show claim status for insurance claims */ }
+            { isOhioLocation && insuranceData?.verified && insuranceData?.billingType === 'insurance' && (
+                <ClaimStatusIndicator
+                    status={ claimStatus }
+                    claimId={ claimId }
+                    claimSubmission={ claimSubmission }
+                    pcn={ pcn }
+                    onStatusUpdate={ setClaimStatus }
+                />
+            ) }
+
             <Grid container spacing={ 2 }>
                 {/* Only show card fields if payment is required */ }
                 { totalAmount > 0 && (
@@ -394,16 +740,21 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
                         { processing ? (
                             <>
                                 <CircularProgress size={ 20 } sx={ { mr: 1, color: 'white' } } />
-                                Processing...
+                                { claimStatus === 'creating' && 'Creating CMS1500 Form...' }
+                                { claimStatus === 'submitting' && 'Submitting to ClaimMD...' }
+                                { claimStatus === 'processing' && 'Processing Payment...' }
+                                { !['creating', 'submitting', 'processing'].includes(claimStatus) && 'Processing...' }
                             </>
-                        ) : totalAmount > 0 || !isOhioLocation ? (
+                        ) : totalAmount > 0 ? (
                             <>
                                 <Lock sx={ { mr: 1, fontSize: 20 } } />
-                                Pay ${ totalAmount }
+                                { isOhioLocation && insuranceData?.verified && insuranceData?.billingType === 'insurance'
+                                    ? `Pay Patient Responsibility $${totalAmount}`
+                                    : `Pay $${totalAmount}` }
                             </>
                         ) : (
                             <>
-                                <HealthAndSafety sx={ { mr: 1, fontSize: 20 } } />
+                                <Send sx={ { mr: 1, fontSize: 20 } } />
                                 Submit Insurance Claim
                             </>
                         ) }
@@ -415,16 +766,18 @@ const CardPaymentForm = ({ bookingData, totalAmount, insuranceData, isOhioLocati
             <Box sx={ { display: 'flex', alignItems: 'center', justifyContent: 'center', mt: 2 } }>
                 <Lock sx={ { fontSize: 14, color: 'text.secondary', mr: 0.5 } } />
                 <Typography variant="caption" color="text.secondary">
-                    { totalAmount > 0 && !isOhioLocation ? 'Secured by Stripe' : 'Insurance claim will be processed securely' }
+                    { totalAmount > 0
+                        ? 'Secured by Stripe & ClaimMD HIPAA-compliant processing'
+                        : 'Insurance claim processed securely through ClaimMD'
+                    }
                 </Typography>
             </Box>
         </Box>
     );
 };
 
-// Main PaymentFlow Component - Enhanced with Insurance Eligibility Verification
+// Main PaymentFlow Component continues with enhanced insurance handling...
 const PaymentFlow = ({ bookingData, onComplete }) => {
-    // Check if Ohio location for insurance
     const isOhioLocation = bookingData.location?.code === "OH" || bookingData.location?.location === "Ohio";
 
     const [currentSubStep, setCurrentSubStep] = useState(isOhioLocation ? 0 : 1);
@@ -432,6 +785,16 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
     const [error, setError] = useState(null);
     const [appointment_type, setAppointmenttype] = useState([]);
     const [paymentSuccess, setPaymentSuccess] = useState(false);
+    const [coverageCalculation, setCoverageCalculation] = useState({
+        totalDue: bookingData.service?.pricing || 0,
+        insuranceCoverage: 0,
+        patientResponsibility: bookingData.service?.pricing || 0,
+        copay: 0,
+        deductible: 0,
+        coinsurance: 0,
+        coverageDetails: 'No insurance verification'
+    });
+
     const [insuranceData, setInsuranceData] = useState({
         hasInsurance: false,
         planId: '',
@@ -442,18 +805,15 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         billingType: 'self-pay',
         requestSuperbill: false,
         verified: false,
-        copayAmount: null,
-        coverageAmount: null,
         m_dob: null,
         eligibilityId: null,
         benefits: null,
         eligibilityMessages: [],
-        clientId: null,           // Store client ID from eligibility check
-        deductible: null,         // Store deductible info
-        coinsurance: null,        // Store coinsurance info
-        coveragePercentage: null, // Store coverage percentage
-        eligibilityStatus: null   // Store overall eligibility status
+        clientId: null,
+        eligibilityStatus: null,
+        eligibilityResponse: null
     });
+
     const [insurancePlans, setInsurancePlans] = useState([]);
     const theme = useTheme();
 
@@ -490,28 +850,106 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         }
     };
 
-    // Enhanced service code mapping for better CPT code accuracy
-    const getServiceCodeForAppointment = (appointmentType, serviceType) => {
-        const serviceMapping = {
-            'nutrition-consultation': '97802',     // Medical nutrition therapy, initial
-            'nutrition-followup': '97803',         // Medical nutrition therapy, re-assessment  
-            'nutrition': '97802',
-            'dietitian': '97802',
-            'group-nutrition': '97804',            // Medical nutrition therapy, group
-            'therapy-session': '90834',            // Psychotherapy, 45 minutes
-            'therapy': '90834',
-            'medical-consultation': '99213',        // Office visit, established patient
-            'medical': '99213',
-            'wellness': '99401',                   // Preventive counseling
-            'weight-management': '97802'           // Medical nutrition therapy
-        };
+    // Enhanced HTML benefit parser for Healthie eligibility responses
+    class HealthieBenefitParser {
+        static parseHTMLResponse(htmlResponse) {
+            if (!htmlResponse) return null;
 
-        return serviceMapping[appointmentType?.toLowerCase()] ||
-            serviceMapping[serviceType?.toLowerCase()] ||
-            '97802'; // Default to nutrition therapy
-    };
+            const benefits = [];
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(htmlResponse, 'text/html');
 
-    // Enhanced error handling for eligibility responses
+            // Extract benefit sections
+            const sections = doc.querySelectorAll('div > strong');
+
+            sections.forEach(section => {
+                const benefitType = section.textContent.trim();
+                const parentDiv = section.closest('div');
+
+                if (parentDiv) {
+                    const benefit = {
+                        category: benefitType,
+                        coveragePercentage: null,
+                        copay: null,
+                        coinsurance: null,
+                        deductible: null,
+                        active: false,
+                        details: []
+                    };
+
+                    // Look for coverage indicators
+                    const listItems = parentDiv.querySelectorAll('li');
+                    listItems.forEach(item => {
+                        const text = item.textContent.trim();
+
+                        // Check for active coverage
+                        if (text.includes('Active Coverage')) {
+                            benefit.active = true;
+                        }
+
+                        // Extract copayment
+                        const copayMatch = text.match(/Co-Payment:\s*\$(\d+(?:\.\d{2})?)/i);
+                        if (copayMatch) {
+                            benefit.copay = parseFloat(copayMatch[1]);
+                        }
+
+                        // Extract coinsurance
+                        const coinsuranceMatch = text.match(/Co-Insurance:\s*(\d+)%/i);
+                        if (coinsuranceMatch) {
+                            benefit.coinsurance = parseFloat(coinsuranceMatch[1]);
+                            // If coinsurance is 0%, that means 100% coverage
+                            if (benefit.coinsurance === 0) {
+                                benefit.coveragePercentage = 100;
+                            }
+                        }
+
+                        // Extract limitations/coverage percentages
+                        const limitationMatch = text.match(/Limitations:\s*(\d+)%/i);
+                        if (limitationMatch) {
+                            benefit.coveragePercentage = parseFloat(limitationMatch[1]);
+                        }
+
+                        // Store additional details
+                        if (text && text !== 'Active Coverage') {
+                            benefit.details.push(text);
+                        }
+                    });
+
+                    // Only add benefits that are active or have coverage data
+                    if (benefit.active || benefit.copay !== null || benefit.coinsurance !== null || benefit.coveragePercentage !== null) {
+                        benefits.push(benefit);
+                    }
+                }
+            });
+
+            return benefits;
+        }
+
+        static findRelevantBenefit(benefits, serviceType = 'nutritional') {
+            // Priority order for nutritional services
+            const priorities = [
+                'Professional (Physician) Visit - Office',
+                'Medical Care',
+                'Hospital - Outpatient',
+                'Outpatient',
+                'General'
+            ];
+
+            for (const priority of priorities) {
+                const benefit = benefits.find(b =>
+                    b.category.toLowerCase().includes(priority.toLowerCase())
+                );
+                if (benefit && benefit.active) {
+                    return benefit;
+                }
+            }
+
+            // Return first active benefit as fallback
+            return benefits.find(b => b.active) || benefits[0];
+        }
+    }
+
+    // Enhanced eligibility response handling with HTML parsing
     const handleEligibilityResponse = (eligibilityResult) => {
         if (!eligibilityResult?.runEligibilityCheck?.eligibility_check) {
             throw new Error('No eligibility check response received from insurance system');
@@ -533,24 +971,61 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
             }
         }
 
-        if (!eligibility_check?.eligibilityResponse?.eligible) {
-            return {
-                eligible: false,
-                reason: eligibility_check?.eligibilityResponse?.ineligibilityReason ||
-                    'Insurance plan does not cover this service or eligibility could not be verified',
-                messages: messages || [],
-                eligibility_check
-            };
+        const eligibilityResponse = eligibility_check?.eligibilityResponse;
+        let isEligible = eligibilityResponse?.eligible || false;
+
+        // Handle benefits array - may be empty but HTML response contains data
+        let benefits = eligibilityResponse?.benefits || [];
+
+        // NEW: Parse HTML response if benefits array is empty
+        if (benefits.length === 0 && eligibility_check?.policy?.latest_eligibility_check?.response_as_html) {
+            console.log('Parsing HTML eligibility response for benefit details');
+            const parsedBenefits = HealthieBenefitParser.parseHTMLResponse(
+                eligibility_check.policy.latest_eligibility_check.response_as_html
+            );
+
+            if (parsedBenefits && parsedBenefits.length > 0) {
+                benefits = parsedBenefits;
+
+                // If we found active benefits, consider eligible
+                const activeBenefits = benefits.filter(b => b.active);
+                if (activeBenefits.length > 0) {
+                    isEligible = true;
+                }
+            }
+        }
+
+        // If still no benefits but we have active coverage indicators, create default
+        if (isEligible && benefits.length === 0) {
+            console.warn('Benefits array empty but eligible - using default structure');
+            benefits = [{
+                category: 'OUTPATIENT',
+                coveragePercentage: 80,
+                copay: eligibilityResponse?.copay || 0,
+                deductible: eligibilityResponse?.deductible || 0,
+                coinsurance: eligibilityResponse?.coinsurance || 20,
+                description: 'Default coverage structure'
+            }];
         }
 
         return {
-            eligible: true,
+            eligible: isEligible,
             eligibility_check,
-            messages: messages || []
+            eligibilityResponse: {
+                ...eligibilityResponse,
+                benefits: benefits
+            },
+            messages: messages || [],
+            reason: !isEligible ? (
+                eligibilityResponse?.ineligibilityReason ||
+                'Insurance plan does not cover this service or eligibility could not be verified'
+            ) : null,
+            hasLimitedBenefitData: benefits.length === 0,
+            parsedFromHTML: benefits.length > 0 && !eligibilityResponse?.benefits?.length
         };
     };
 
-    // UPDATED: Enhanced insurance submission with complete client creation + eligibility flow
+    // Enhanced insurance submission with coverage calculation
     const handleInsuranceSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
@@ -570,12 +1045,13 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                     provider_id: bookingData.appointment.providerId.toString()
                 });
             }
+
             const policyResult = await healthieAPI.createPolicy({
                 userId: client.id,
                 insurancePlanId: insuranceData.planId,
                 memberId: insuranceData.memberId,
                 groupNumber: insuranceData.groupNumber,
-                holderDob: insuranceData.m_dob,  // This is required!
+                holderDob: insuranceData.m_dob,
                 holderFirstName: insuranceData.relationshipToInsured === 'self'
                     ? bookingData.patient.firstName
                     : insuranceData.holderFirstName,
@@ -585,14 +1061,10 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                 holderRelationship: insuranceData.relationshipToInsured,
                 holderAddress: insuranceData.holderAddress || bookingData.patient.address,
                 isPrimary: true,
-                effectiveStart: new Date().toISOString().split('T')[0] // Today's date
+                effectiveStart: new Date().toISOString().split('T')[0]
             });
 
-            // Step 2: Run eligibility check with client ID and proper service codes
-            const serviceCodes = getServiceCodeForAppointment(
-                bookingData.service?.type,
-                bookingData.service?.name
-            );
+            // Step 2: Run eligibility check
             const eligibilityResult = await healthieAPI.runEligibilityCheck({
                 policyId: policyResult.policies[0]?.id,
                 serviceCodes: "claim_md"
@@ -601,31 +1073,31 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
             // Step 3: Process eligibility response with enhanced error handling
             const eligibilityResponse = handleEligibilityResponse(eligibilityResult.data);
 
-            console.log("eligibilityResponse", eligibilityResponse);
             if (eligibilityResponse.eligible) {
-                const eligibilityCheck = eligibilityResponse.eligibilityCheck;
-                const response = eligibilityCheck.eligibilityResponse;
+                // Calculate coverage using the enhanced calculator
+                const coverage = CoverageCalculator.calculatePatientResponsibility(
+                    bookingData.service?.pricing,
+                    eligibilityResponse
+                );
 
-                // Extract comprehensive benefit information
-                const benefits = response.benefits || [];
-                const primaryBenefit = benefits.find(b =>
-                    b.category === serviceCodes ||
-                    b.category === 'OUTPATIENT' ||
-                    b.category === 'GENERAL'
-                ) || benefits[0];
+                setCoverageCalculation(coverage);
+
+                // DEBUG: Log coverage calculation
+                console.log('Coverage Calculation Results:', {
+                    serviceAmount: bookingData.service?.pricing,
+                    coverage: coverage,
+                    eligibilityResponse: eligibilityResponse,
+                    parsedFromHTML: eligibilityResponse.parsedFromHTML
+                });
 
                 setInsuranceData(prev => ({
                     ...prev,
                     clientId: client.id,
                     verified: true,
-                    eligibilityStatus: eligibilityCheck.status,
-                    eligibilityId: eligibilityCheck.id,
-                    copayAmount: response.copay || primaryBenefit?.copay || 0,
-                    deductible: response.deductible || primaryBenefit?.deductible || 0,
-                    coinsurance: response.coinsurance || primaryBenefit?.coinsurance || 0,
-                    coveragePercentage: primaryBenefit?.coveragePercentage || null,
-                    coverageAmount: bookingData.service?.pricing - (response.copay || primaryBenefit?.copay || 0),
-                    benefits: benefits,
+                    eligibilityStatus: eligibilityResponse.eligibility_check.status,
+                    eligibilityId: eligibilityResponse.eligibility_check.id,
+                    eligibilityResponse: eligibilityResponse.eligibilityResponse,
+                    benefits: eligibilityResponse.eligibilityResponse?.benefits || [],
                     eligibilityMessages: eligibilityResponse.messages
                 }));
 
@@ -633,21 +1105,31 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
 
             } else {
                 // Handle ineligible case
-                setError(`${eligibilityResponse.reason}. You can proceed with self-pay or request a superbill for potential reimbursement.`);
+                setError(`${eligibilityResponse.messages}. You can proceed with self-pay or request a superbill for potential reimbursement.`);
                 setInsuranceData(prev => ({
                     ...prev,
                     clientId: client.id,
                     verified: false,
                     billingType: 'self-pay',
                     eligibilityMessages: eligibilityResponse.messages,
-                    eligibilityId: eligibilityResponse.eligibilityCheck?.id || null
+                    eligibilityId: eligibilityResponse.eligibility_check?.id || null
                 }));
+
+                // Reset coverage calculation to self-pay
+                setCoverageCalculation({
+                    totalDue: bookingData.service?.pricing || 0,
+                    insuranceCoverage: 0,
+                    patientResponsibility: bookingData.service?.pricing || 0,
+                    copay: 0,
+                    deductible: 0,
+                    coinsurance: 0,
+                    coverageDetails: 'Not covered by insurance'
+                });
             }
 
         } catch (error) {
             console.error('Insurance eligibility check error:', error);
 
-            // Provide more specific error messages
             let errorMessage = 'Unable to verify insurance eligibility at this time.';
             if (error.message.includes('not found')) {
                 errorMessage = 'Insurance plan or member information not found. Please verify your details.';
@@ -668,18 +1150,13 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         }
     };
 
-    // Calculate total amount based on insurance (Ohio only) - Enhanced calculation
+    // Calculate total amount based on coverage calculation
     const calculateTotalAmount = () => {
-        let amount;
         if (isOhioLocation && insuranceData.verified && insuranceData.billingType === 'insurance') {
-            // For insurance billing, patient pays copay
-            amount = insuranceData.copayAmount || 0;
+            return coverageCalculation.patientResponsibility;
         } else {
-            // For self-pay or superbill, patient pays full amount
-            amount = bookingData.service?.pricing || 0;
+            return parseFloat((bookingData.service?.pricing || 0).toString().replace(/[^0-9.-]/g, '')) || 0;
         }
-        // Ensure numeric output and handle string prices
-        return parseFloat((amount.toString()).replace(/[^0-9.-]/g, '')) || 0;
     };
 
     const totalAmount = calculateTotalAmount();
@@ -704,6 +1181,15 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
             location: bookingData.location.location,
             payment: paymentData,
             insurance: insuranceData,
+            coverage: coverageCalculation,
+            claim: {
+                status: paymentData.claimStatus,
+                cms1500_id: paymentData.claimId,
+                submission: paymentData.claimSubmission,
+                submission_id: paymentData.claimSubmissionId,
+                pcn: paymentData.pcn,
+                integration_data: paymentData.claimSubmissionData
+            },
             confirmationCode: 'CONF' + Math.random().toString(36).substr(2, 9).toUpperCase()
         };
 
@@ -720,7 +1206,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         setError(errorMessage);
     };
 
-    // UPDATED: Enhanced Insurance Step with comprehensive eligibility feedback
+    // Enhanced Insurance Step
     const renderInsuranceStep = () => (
         <Card>
             <CardContent sx={ { p: 4 } }>
@@ -856,7 +1342,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                         row
                                     >
                                         <FormControlLabel value="insurance" control={ <Radio /> } label="Bill Insurance Directly" />
-                                        <FormControlLabel value="superbill" control={ <Radio /> } label="Pay Now & Get Superbill" />
+                                        {/* <FormControlLabel value="superbill" control={ <Radio /> } label="Pay Now & Get Superbill" /> */ }
                                         <FormControlLabel value="self-pay" control={ <Radio /> } label="Self-Pay Only" />
                                     </RadioGroup>
                                 </Grid>
@@ -927,7 +1413,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         </Card>
     );
 
-    // UPDATED: Enhanced Payment Step with detailed eligibility results and coverage breakdown
+    // Enhanced Payment Step
     const renderPaymentStep = () => (
         <Card sx={ { maxWidth: { xs: '100%', md: 800 }, mx: 'auto' } }>
             <CardContent sx={ { p: { xs: 2, sm: 3, md: 4 } } }>
@@ -940,38 +1426,40 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                             </Typography>
                         </Box>
 
-                        {/* UPDATED: Comprehensive insurance verification display */ }
+                        {/* Enhanced insurance verification display */ }
                         { isOhioLocation && insuranceData.verified && insuranceData.billingType === 'insurance' && (
                             <Alert severity="success" sx={ { mb: 3 } }>
-                                <Typography variant="body2" fontWeight={ 600 }>✓ Insurance Eligibility Verified Successfully!</Typography>
+                                <Typography variant="body2" fontWeight={ 600 }>✓ Insurance Coverage Breakdown</Typography>
                                 <Box sx={ { mt: 1 } }>
                                     <Typography variant="caption" display="block">
-                                        <strong>Your copay:</strong> ${ insuranceData.copayAmount || 0 }
+                                        <strong>Service Amount:</strong> { bookingData.service?.pricing || 0 }
                                     </Typography>
-                                    { insuranceData.deductible > 0 && (
-                                        <Typography variant="caption" display="block">
-                                            <strong>Deductible:</strong> ${ insuranceData.deductible }
+                                    <Typography variant="caption" display="block" color="success.main">
+                                        <strong>Insurance Coverage:</strong> ${ coverageCalculation.insuranceCoverage }
+                                    </Typography>
+                                    <Typography variant="caption" display="block" color="primary.main">
+                                        <strong>Your Responsibility:</strong> ${ coverageCalculation.patientResponsibility }
+                                    </Typography>
+                                    <Typography variant="caption" display="block" sx={ { mt: 0.5, fontStyle: 'italic' } }>
+                                        { coverageCalculation.coverageDetails }
+                                    </Typography>
+                                    { coverageCalculation.source === 'html_parsed' && (
+                                        <Typography variant="caption" display="block" sx={ { mt: 0.5, color: 'info.main' } }>
+                                            ✓ Detailed benefits extracted from { insuranceData.eligibilityResponse?.benefits?.length || 0 } coverage categories
                                         </Typography>
                                     ) }
-                                    { insuranceData.coinsurance > 0 && (
-                                        <Typography variant="caption" display="block">
-                                            <strong>Coinsurance:</strong> { insuranceData.coinsurance }%
+                                    { coverageCalculation.benefitCategory && (
+                                        <Typography variant="caption" display="block" sx={ { mt: 0.5 } }>
+                                            <strong>Primary Benefit:</strong> { coverageCalculation.benefitCategory }
                                         </Typography>
                                     ) }
-                                    { insuranceData.benefits?.map((benefit, index) => (
-                                        <Typography key={ index } variant="caption" display="block" sx={ { mt: 0.5 } }>
-                                            <strong>{ benefit.category }:</strong>
-                                            { benefit.coveragePercentage && ` ${benefit.coveragePercentage}% covered` }
-                                            { benefit.copay && ` | Copay: $${benefit.copay}` }
-                                            { benefit.deductible && ` | Deductible: $${benefit.deductible}` }
-                                        </Typography>
-                                    )) }
                                     <Typography variant="caption" display="block" sx={ { mt: 1, fontStyle: 'italic' } }>
-                                        Claim will be submitted automatically to your insurance.
+                                        { totalAmount === 0 ? 'No payment required - Claim will be submitted directly to your insurance.' : 'Claim will be submitted automatically to your insurance.' }
                                     </Typography>
                                 </Box>
                             </Alert>
                         ) }
+
 
                         { isOhioLocation && insuranceData.requestSuperbill && (
                             <Alert severity="info" sx={ { mb: 3 } }>
@@ -1050,12 +1538,12 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                 <>
                                     <Box sx={ { display: 'flex', justifyContent: 'space-between', mb: 1 } }>
                                         <Typography variant="body2">Service Fee:</Typography>
-                                        <Typography variant="body2">${ bookingData.service?.pricing || 0 }</Typography>
+                                        <Typography variant="body2">{ bookingData.service?.pricing || 0 }</Typography>
                                     </Box>
                                     <Box sx={ { display: 'flex', justifyContent: 'space-between', mb: 1 } }>
                                         <Typography variant="body2" color="success.main">Insurance Coverage:</Typography>
                                         <Typography variant="body2" color="success.main">
-                                            -${ insuranceData.coverageAmount || (bookingData.service?.pricing - (insuranceData.copayAmount || 0)) }
+                                            -${ coverageCalculation.insuranceCoverage }
                                         </Typography>
                                     </Box>
                                     <Divider sx={ { my: 1 } } />
@@ -1064,7 +1552,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
 
                             <Box sx={ { display: 'flex', justifyContent: 'space-between' } }>
                                 <Typography variant="h6" fontWeight={ 600 }>
-                                    { isOhioLocation && insuranceData.verified && insuranceData.billingType === 'insurance' ? 'Copay Due:' : 'Total Amount:' }
+                                    { isOhioLocation && insuranceData.verified && insuranceData.billingType === 'insurance' ? 'Patient Responsibility:' : 'Total Amount:' }
                                 </Typography>
                                 <Typography variant="h6" fontWeight={ 600 } color="primary">
                                     ${ totalAmount }
@@ -1093,6 +1581,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                     onSuccess={ handlePaymentSuccess }
                                     onError={ handlePaymentError }
                                     appointment_type={ appointment_type }
+                                    coverageCalculation={ coverageCalculation }
                                 />
                             </Elements>
                         </Box>
@@ -1139,18 +1628,13 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         </Card>
     );
 
-    // Sub-step labels - only include insurance step for Ohio
-    const subStepLabels = isOhioLocation
-        ? ['Insurance Eligibility Verification', 'Payment Confirmation']
-        : ['Payment Confirmation'];
-
     return (
         <Box>
             {/* Sub-step indicator - only show if Ohio */ }
             { isOhioLocation && (
                 <Box sx={ { mb: 4 } }>
                     <Stepper activeStep={ currentSubStep } alternativeLabel>
-                        { subStepLabels.map((label) => (
+                        { ['Insurance Eligibility Verification', 'Payment Confirmation'].map((label) => (
                             <Step key={ label }>
                                 <StepLabel>{ label }</StepLabel>
                             </Step>

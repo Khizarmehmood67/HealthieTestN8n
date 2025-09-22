@@ -117,6 +117,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
             setLoading(false);
         }
     };
+    console.log("timeSlotsByDay", timeSlotsByDay);
 
     const processAvailabilitiesIntoSlots = (avails) => {
         const slotsByDay = {};
@@ -149,8 +150,8 @@ const DoctorSelector = ({ location, service, onNext }) => {
                 // Find the doctor for this availability
                 const slotDoctor = doctors.find(d => d.id === avail.user_id);
 
-                // Add the slot
-                slotsByDay[dayKey].push({
+                // Create the slot
+                const slot = {
                     id: `${avail.id}-${slotStart.toISOString()}`,
                     time: format(slotStart, 'h:mm a'),
                     datetime: slotStart.toISOString(),
@@ -159,7 +160,13 @@ const DoctorSelector = ({ location, service, onNext }) => {
                     availabilityId: avail.id,
                     fullAvailability: avail,
                     doctor: slotDoctor
-                });
+                };
+
+                // Check if the slot already exists
+                const existingSlot = slotsByDay[dayKey].find(s => s.datetime === slot.datetime && s.providerId === slot.providerId);
+                if (!existingSlot) {
+                    slotsByDay[dayKey].push(slot);
+                }
 
                 slotStart = new Date(slotEnd);
             }
@@ -247,8 +254,8 @@ const DoctorSelector = ({ location, service, onNext }) => {
             </Typography>
 
             {/* Provider Selection Toggle */ }
-            <Box sx={ { mb: 3, display: 'flex', alignItems: 'center', gap: 2, justifyContent: "space-between" } }>
-                <ToggleButtonGroup
+
+            {/* <ToggleButtonGroup
                     value={ providerMode }
                     exclusive
                     onChange={ handleProviderModeChange }
@@ -262,13 +269,14 @@ const DoctorSelector = ({ location, service, onNext }) => {
                         <Person sx={ { mr: 1, fontSize: 20 } } />
                         Specific Provider
                     </ToggleButton>
-                </ToggleButtonGroup>
-                { availabilities.length === 0 && !loading && (
+                </ToggleButtonGroup> */}
+            { availabilities.length === 0 && !loading && (
+                <Box sx={ { mb: 3, display: 'flex', alignItems: 'center', gap: 2, justifyContent: "space-between" } }>
                     <Button variant='contained' sx={ { color: "#fff" } }>
                         Don't see a time? Text us
                     </Button>
-                ) }
-            </Box>
+                </Box>
+            ) }
 
             {/* Doctor Selection */ }
             { providerMode === 'specific' && (
@@ -389,7 +397,13 @@ const DoctorSelector = ({ location, service, onNext }) => {
                         <Box sx={ { display: 'flex', minWidth: { xs: '700px', md: 'auto' } } }>
                             { weekDays.map((day, dayIndex) => {
                                 const dayKey = format(day, 'yyyy-MM-dd');
-                                const slots = timeSlotsByDay[dayKey] || [];
+                                const allSlots = timeSlotsByDay[dayKey] || [];
+
+                                // Deduplicate slots by time, keeping the first occurrence
+                                const slots = allSlots.filter((slot, index, array) =>
+                                    array.findIndex(s => s.time === slot.time) === index
+                                );
+
                                 const isPastDay = day < startOfDay(new Date());
 
                                 return (

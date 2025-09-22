@@ -19,7 +19,7 @@ const ServiceSelector = ({ location, onNext }) => {
                 // Fetch the offerings from the Healthie API
                 const response = await HealthieAPI.getAppointmentTypes();
                 if (response) {
-                    const filterServices = response.filter((appt) => appt.clients_can_book === true)
+                    const filterServices = response.filter((appt) => appt.bookable_by_groups === false)
                     setServices(filterServices);
                 }
             } catch (error) {
