@@ -1239,75 +1239,203 @@ price_and_cpt_price{
   //   }
   // }
 
-  async getAvailabilities(locationId, appointmentTypeId, startDate, endDate, providerId = null, userTimeZone) {
+  //   async getAvailabilities(locationId, appointmentTypeId, startDate, endDate, providerId = null, userTimeZone) {
+  //     const query = `
+  //       query availabilities(
+  //      $user_id: ID, 
+  //         $endDate: String, 
+  //         $startDate: String, 
+  //         $one_time: Boolean, 
+  //         $is_repeating: Boolean, 
+  //         $contact_type_id: ID,
+  //         $includeRepeating: Boolean, 
+  //         $appointment_type_id: ID, 
+  //         $appointment_location_id: ID, 
+  //         $timezone: String
+  //         $show_availability: Boolean
+  //       ) {
+  //         availabilities(
+  //           user_id: $user_id
+  //           endDate: $endDate
+  //           one_time: $one_time
+  //           startDate: $startDate
+  //           is_repeating: $is_repeating
+  //           contact_type_id: $contact_type_id
+  //           includeRepeating: $includeRepeating
+  //           appointment_type_id: $appointment_type_id
+  //           appointment_location_id: $appointment_location_id
+  //           timezone: $timezone
+  //           show_availability: $show_availability
+  //         ) {
+  //           id
+  //           user_id
+  //           range_end
+  //           resourceId
+  //           range_start
+  //           duration_string
+  //           day_of_week
+  //           end_on
+  //           user {
+  //   id,
+  //   name
+  // }
+  //           is_repeating
+  //           timezone_abbr
+  //           contact_type_id
+  //           origin_start_date
+  //           appointment_type_id
+  //           appointment_location_id
+  //           repeating_availability_id
+  //         }
+  //       }
+  //     `;
+
+  //     const variables = {
+  //       user_id: providerId?.toString() || null,
+  //       appointment_location_id: locationId?.toString() || null,
+  //       appointment_type_id: appointmentTypeId?.toString() || null,
+  //       startDate: startDate,
+  //       endDate: endDate,
+  //       timezone: userTimeZone,
+  //       one_time: true,
+  //       is_repeating: true,
+  //       includeRepeating: true,
+  //       contact_type_id: null,
+  //       show_availability: true
+  //     };
+
+  //     try {
+  //       const result = await this.graphqlRequest(query, variables);
+  //       return result.data.availabilities;
+  //     } catch (error) {
+  //       console.error('Error fetching availabilities:', error);
+  //       throw error;
+  //     }
+  //   }
+
+  // Updated healthieAPI method for getting available slots
+  // Add this method to your healthieAPI service class
+
+  // Single unified method for fetching available slots (handles single or multiple providers)
+  // Add this method to your healthieAPI service class
+
+  // Single unified method for fetching available slots (handles single or multiple providers)
+  // Add this method to your healthieAPI service class
+
+  // Single unified method for fetching available slots (handles single or multiple providers)
+  async getAvailableSlotsForProviders(locationId, appointmentTypeId, startDate, endDate, providerId, userTimeZone, contactType = "Healthie Video Call") {
     const query = `
-      query availabilities(
-     $user_id: ID, 
-        $endDate: String, 
-        $startDate: String, 
-        $one_time: Boolean, 
-        $is_repeating: Boolean, 
-        $contact_type_id: ID,
-        $includeRepeating: Boolean, 
-        $appointment_type_id: ID, 
-        $appointment_location_id: ID, 
-        $timezone: String
+    query availableSlotsForRange(
+      $appointment_to_reschedule_id: ID
+      $appointment_type_ids: [ID]
+      $appt_loc_id: ID
+      $appt_type_id: ID
+      $clients_can_join_waitlist: Boolean
+      $contact_type: String
+      $end_date: String
+      $end_date_boundary: String
+      $length: String
+      $licensed_in_state: String
+      $make_unique: Boolean
+      $org_level: Boolean
+      $outside_factors: Boolean
+      $provider_id: String
+      $provider_ids: [ID]
+      $tag_ids: [ID]
+      $start_date: String
+      $start_date_boundary: String
+      $timezone: String
+      $appointment_type_id: ID
+      $appointment_location_id: String
+    ) {
+      availableSlotsForRange(
+        appointment_to_reschedule_id: $appointment_to_reschedule_id
+        appointment_type_ids: $appointment_type_ids
+        appt_loc_id: $appt_loc_id
+        appt_type_id: $appt_type_id
+        clients_can_join_waitlist: $clients_can_join_waitlist
+        contact_type: $contact_type
+        end_date: $end_date
+        end_date_boundary: $end_date_boundary
+        length: $length
+        licensed_in_state: $licensed_in_state
+        make_unique: $make_unique
+        org_level: $org_level
+        outside_factors: $outside_factors
+        provider_id: $provider_id
+        provider_ids: $provider_ids
+        tag_ids: $tag_ids
+        start_date: $start_date
+        start_date_boundary: $start_date_boundary
+        timezone: $timezone
       ) {
-        availabilities(
-          user_id: $user_id
-          endDate: $endDate
-          one_time: $one_time
-          startDate: $startDate
-          is_repeating: $is_repeating
-          contact_type_id: $contact_type_id
-          includeRepeating: $includeRepeating
-          appointment_type_id: $appointment_type_id
-          appointment_location_id: $appointment_location_id
-          timezone: $timezone
-        ) {
-          id
-          user_id
-          range_end
-          resourceId
-          range_start
-          day_of_week
-          end_on
-          user {
-  id,
-  name
-}
-          is_repeating
-          timezone_abbr
-          contact_type_id
-          origin_start_date
-          appointment_type_id
-          appointment_location_id
-          repeating_availability_id
-        }
+        appointment_id
+        date
+        has_waitlist_enabled
+        is_fully_booked
+        length
+        user_id
       }
-    `;
+      appointmentType(id: $appointment_type_id) {
+        id
+        name
+        length
+        no_availability_message
+        availability_exists_for(
+          provider_id: $provider_id
+          org_level: $org_level
+          appointment_location_id: $appointment_location_id
+        )
+        __typename
+      }
+    }
+  `;
+
+    // Handle both single provider (as array) and multiple providers
+    // const providerIdsArray = Array.isArray(providerIds) ? providerIds : [Number(providerIds)];
 
     const variables = {
-      user_id: providerId?.toString() || null,
-      appointment_location_id: locationId?.toString() || null,
-      appointment_type_id: appointmentTypeId?.toString() || null,
-      startDate: startDate,
-      endDate: endDate,
+      org_level: false,
+      provider_id: providerId, // Use provider_ids instead for bulk queries
+      provider_ids: null, // Keep as ID array (no .toString())
+      appt_type_id: appointmentTypeId, // Keep as ID
+      appointment_type_id: appointmentTypeId, // Keep as ID
+      appointment_location_id: locationId, // Add this for the nested query
+      end_date: endDate.split('T')[0], // Format as YYYY-MM-DD
+      start_date: startDate.split('T')[0], // Format as YYYY-MM-DD
+      appt_loc_id: locationId, // Keep as ID
+      contact_type: contactType,
       timezone: userTimeZone,
-      one_time: true,
-      is_repeating: true,
-      includeRepeating: true,
-      contact_type_id: null
+      clients_can_join_waitlist: true,
+      appointment_to_reschedule_id: null,
+      appointment_type_ids: null,
+      end_date_boundary: null,
+      length: null,
+      licensed_in_state: "",
+      make_unique: false,
+      outside_factors: false,
+      tag_ids: null,
+      start_date_boundary: null
     };
 
     try {
       const result = await this.graphqlRequest(query, variables);
-      return result.data.availabilities;
+      console.log('API returned', result.data.availableSlotsForRange?.length || 0, 'slots');
+      return result.data.availableSlotsForRange || [];
     } catch (error) {
-      console.error('Error fetching availabilities:', error);
+      console.error('Error fetching available slots for providers:', error);
       throw error;
     }
   }
+
+  // Optional: You can remove the old getAvailabilities method since it's no longer needed
+  // The new method replaces both getAvailabilities and any individual provider fetching logic
+
+  // Optional: You can remove the old getAvailabilities method since it's no longer needed
+  // The new method replaces both getAvailabilities and any individual provider fetching logic
+
+  // Optional: You can remove the old getAvailabilities method since it's no longer needed
+  // The new method replaces both getAvailabilities and any individual provider fetching logic
 
   // // CORRECTED getProviders method - using 'provider' (singular) not 'providers'
   // async getProviders(locationId, serviceId) {

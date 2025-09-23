@@ -11,8 +11,7 @@ import US_STATES from '../data/UsStates';
 
 const DoctorSelector = ({ location, service, onNext }) => {
     const [currentWeek, setCurrentWeek] = useState(new Date());
-    const [availabilities, setAvailabilities] = useState([]);
-    const [appointments, setAppointments] = useState([]);
+    const [availableSlots, setAvailableSlots] = useState([]);
     const [selectedSlot, setSelectedSlot] = useState(null);
     const [selectedDoctor, setSelectedDoctor] = useState(null);
     const [doctors, setDoctors] = useState([]);
@@ -41,7 +40,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
         if (location && service && doctors.length > 0) {
             fetchAllData();
         }
-    }, [currentWeek, providerMode, selectedDoctor, doctors]);
+    }, [currentWeek, providerMode, doctors]);
 
     const fetchDoctors = async () => {
         try {
@@ -66,60 +65,55 @@ const DoctorSelector = ({ location, service, onNext }) => {
             const startDate = startOfDay(weekDays[0]).toISOString();
             const endDate = endOfDay(weekDays[weekDays.length - 1]).toISOString();
 
-            let allAvailabilities = [];
+            let allSlots = [];
+            let providerIds = [];
 
             if (providerMode === 'specific' && selectedDoctor) {
-                // Fetch availability for specific doctor
-                const availData = await healthieAPI.getAvailabilities(
-                    location.id,
-                    service.id,
-                    startDate,
-                    endDate,
-                    selectedDoctor.id,
-                    userTimeZone
-                );
-                allAvailabilities = availData || [];
+                // Single provider as array for consistency
+                providerIds = [selectedDoctor.id];
             } else if (providerMode === 'any') {
-                // Fetch availabilities for all doctors who offer this service
-                const availabilityPromises = doctors.map(async (doctor) => {
+                // All provider IDs
+                providerIds = doctors.map(d => d.id);
+            }
+
+            if (providerIds.length > 0) {
+                // Call API for each provider individually
+                const slotPromises = providerIds.map(async (providerId) => {
                     try {
-                        const availData = await healthieAPI.getAvailabilities(
+                        const slots = await healthieAPI.getAvailableSlotsForProviders(
                             location.id,
                             service.id,
                             startDate,
                             endDate,
-                            doctor.id,
-                            userTimeZone
+                            providerId, // Pass single provider as array
+                            userTimeZone,
+                            service.contact_type || null
                         );
-                        return availData || [];
+                        return slots || [];
                     } catch (error) {
-                        console.warn(`Failed to fetch availability for doctor ${doctor.id}:`, error);
+                        console.warn(`Failed to fetch slots for provider ${providerId}:`, error);
                         return [];
                     }
                 });
 
-                // Wait for all availability requests to complete
-                const availabilityArrays = await Promise.all(availabilityPromises);
-                // Flatten all availability arrays into one
-                allAvailabilities = availabilityArrays.flat();
+                const slotArrays = await Promise.all(slotPromises);
+                allSlots = slotArrays.flat();
             }
 
-            setAvailabilities(allAvailabilities);
-            processAvailabilitiesIntoSlots(allAvailabilities);
+            console.log('Raw available slots:', allSlots);
+            setAvailableSlots(allSlots);
+            processAvailableSlotsIntoTimeSlots(allSlots);
 
         } catch (error) {
             console.error('Failed to fetch data:', error);
-            // Clear slots on error
             setTimeSlotsByDay({});
-            setAvailabilities([]);
-            setAppointments([]);
+            setAvailableSlots([]);
         } finally {
             setLoading(false);
         }
     };
-    console.log("timeSlotsByDay", timeSlotsByDay);
 
-    const processAvailabilitiesIntoSlots = (avails) => {
+    const processAvailableSlotsIntoTimeSlots = (slots) => {
         const slotsByDay = {};
 
         // Initialize all days
@@ -128,65 +122,85 @@ const DoctorSelector = ({ location, service, onNext }) => {
             slotsByDay[dayKey] = [];
         });
 
-        // Process each availability
-        avails.forEach(avail => {
-            if (!avail.range_start || !avail.range_end) return;
+        console.log('Processing', slots.length, 'available slots');
 
-            const availStart = new Date(avail.range_start);
-            const availEnd = new Date(avail.range_end);
-            const dayKey = format(availStart, 'yyyy-MM-dd');
+        // Process each slot from the API
+        slots.forEach((slot, index) => {
+            if (!slot.date) {
+                console.warn(`Slot ${index} missing date:`, slot);
+                return;
+            }
+
+            // Skip fully booked slots or ones with existing appointments
+            if (slot.is_fully_booked || slot.appointment_id) {
+                console.log(`Skipping booked slot: ${slot.date}`);
+                return;
+            }
+
+            const slotDate = new Date(slot.date);
+            const dayKey = format(slotDate, 'yyyy-MM-dd');
 
             if (!slotsByDay.hasOwnProperty(dayKey)) return;
 
-            let slotStart = new Date(availStart);
+            // Find the doctor for this slot
+            const slotDoctor = doctors.find(d => d.id === slot.user_id);
 
-            // Generate 30-minute slots
-            while (slotStart < availEnd && slotsByDay[dayKey].length < 20) {
-                const slotEnd = new Date(slotStart);
-                slotEnd.setMinutes(slotEnd.getMinutes() + 30);
+            // Create the processed slot
+            const processedSlot = {
+                id: `${slot.user_id}-${slot.date}`,
+                time: format(slotDate, 'h:mm a'),
+                datetime: slot.date,
+                available: !slot.is_fully_booked && !slot.appointment_id,
+                providerId: slot.user_id,
+                appointment_id: slot.appointment_id,
+                is_fully_booked: slot.is_fully_booked,
+                has_waitlist_enabled: slot.has_waitlist_enabled,
+                doctor: slotDoctor,
+                rawSlot: slot
+            };
 
-                if (slotEnd > availEnd) break;
+            // Check for duplicate slots (same time and provider)
+            const existingSlot = slotsByDay[dayKey].find(s =>
+                s.datetime === processedSlot.datetime && s.providerId === processedSlot.providerId
+            );
 
-                // Find the doctor for this availability
-                const slotDoctor = doctors.find(d => d.id === avail.user_id);
-
-                // Create the slot
-                const slot = {
-                    id: `${avail.id}-${slotStart.toISOString()}`,
-                    time: format(slotStart, 'h:mm a'),
-                    datetime: slotStart.toISOString(),
-                    available: true,
-                    providerId: avail.user_id,
-                    availabilityId: avail.id,
-                    fullAvailability: avail,
-                    doctor: slotDoctor
-                };
-
-                // Check if the slot already exists
-                const existingSlot = slotsByDay[dayKey].find(s => s.datetime === slot.datetime && s.providerId === slot.providerId);
-                if (!existingSlot) {
-                    slotsByDay[dayKey].push(slot);
-                }
-
-                slotStart = new Date(slotEnd);
+            if (!existingSlot) {
+                slotsByDay[dayKey].push(processedSlot);
             }
         });
 
-        // Sort slots by time
+        // Sort slots by time and handle deduplication for "any" mode
         Object.keys(slotsByDay).forEach(dayKey => {
-            slotsByDay[dayKey].sort((a, b) =>
-                new Date(a.datetime) - new Date(b.datetime)
-            );
+            // Sort by time first
+            slotsByDay[dayKey].sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
+
+            // For "any" mode, remove duplicate times (keep first provider's slot)
+            if (providerMode === 'any') {
+                const uniqueSlots = [];
+                const seenTimes = new Set();
+
+                slotsByDay[dayKey].forEach(slot => {
+                    if (!seenTimes.has(slot.time)) {
+                        seenTimes.add(slot.time);
+                        uniqueSlots.push(slot);
+                    }
+                });
+
+                slotsByDay[dayKey] = uniqueSlots;
+            }
+
+            console.log(`Day ${dayKey}: ${slotsByDay[dayKey].length} available slots`);
         });
 
-        // Update the state with the processed slots
         setTimeSlotsByDay(slotsByDay);
     };
+
+    console.log("timeSlotsByDay", timeSlotsByDay);
 
     const handleSlotSelect = (slot) => {
         setSelectedSlot(slot);
 
-        // Pass the full availability object when a slot is selected
+        // Auto-select provider if in "any" mode
         if (providerMode === 'any' && slot.providerId) {
             const provider = doctors.find(d => d.id === slot.providerId);
             if (provider) {
@@ -221,9 +235,9 @@ const DoctorSelector = ({ location, service, onNext }) => {
                 date: selectedSlot.datetime,
                 startTime: selectedSlot.time,
                 slotId: selectedSlot.id,
-                availabilityId: selectedSlot.availabilityId,
                 providerId: selectedSlot.providerId,
-                doctorName: selectedSlot.fullAvailability?.user?.name || selectedSlot.doctor?.full_name
+                doctorName: selectedSlot.doctor?.full_name || selectedSlot.doctor?.name,
+                slotData: selectedSlot.rawSlot // Pass the original slot data
             };
             onNext(appointmentData);
         }
@@ -254,23 +268,23 @@ const DoctorSelector = ({ location, service, onNext }) => {
             </Typography>
 
             {/* Provider Selection Toggle */ }
-
             {/* <ToggleButtonGroup
-                    value={ providerMode }
-                    exclusive
-                    onChange={ handleProviderModeChange }
-                    size="small"
-                >
-                    <ToggleButton value="any">
-                        <Groups sx={ { mr: 1, fontSize: 20 } } />
-                        Any Provider
-                    </ToggleButton>
-                    <ToggleButton value="specific">
-                        <Person sx={ { mr: 1, fontSize: 20 } } />
-                        Specific Provider
-                    </ToggleButton>
-                </ToggleButtonGroup> */}
-            { availabilities.length === 0 && !loading && (
+                value={ providerMode }
+                exclusive
+                onChange={ handleProviderModeChange }
+                size="small"
+            >
+                <ToggleButton value="any">
+                    <Groups sx={ { mr: 1, fontSize: 20 } } />
+                    Any Provider
+                </ToggleButton>
+                <ToggleButton value="specific">
+                    <Person sx={ { mr: 1, fontSize: 20 } } />
+                    Specific Provider
+                </ToggleButton>
+            </ToggleButtonGroup> */}
+
+            { availableSlots.length === 0 && !loading && (
                 <Box sx={ { mb: 3, display: 'flex', alignItems: 'center', gap: 2, justifyContent: "space-between" } }>
                     <Button variant='contained' sx={ { color: "#fff" } }>
                         Don't see a time? Text us
@@ -397,13 +411,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
                         <Box sx={ { display: 'flex', minWidth: { xs: '700px', md: 'auto' } } }>
                             { weekDays.map((day, dayIndex) => {
                                 const dayKey = format(day, 'yyyy-MM-dd');
-                                const allSlots = timeSlotsByDay[dayKey] || [];
-
-                                // Deduplicate slots by time, keeping the first occurrence
-                                const slots = allSlots.filter((slot, index, array) =>
-                                    array.findIndex(s => s.time === slot.time) === index
-                                );
-
+                                const slots = timeSlotsByDay[dayKey] || [];
                                 const isPastDay = day < startOfDay(new Date());
 
                                 return (
@@ -447,6 +455,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
                                                             fontSize: { xs: '0.65rem', sm: '0.75rem' },
                                                             fontWeight: 400,
                                                             minWidth: 0,
+                                                            flexDirection: "column",
                                                             color: "#000",
                                                             borderColor: selectedSlot?.id === slot.id ? theme.palette.primary.main : '#e0e0e0',
                                                             backgroundColor: selectedSlot?.id === slot.id ? theme.palette.primary.light : 'white',

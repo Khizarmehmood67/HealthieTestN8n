@@ -31,6 +31,15 @@ import healthieAPI from '../services/healthieAPI';
 const HEALTHIE_STRIPE_KEY = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = loadStripe(HEALTHIE_STRIPE_KEY);
 
+// Helper function to safely get doctor name
+const getDoctorName = (doctor) => {
+    if (typeof doctor === 'string') return doctor;
+    if (typeof doctor === 'object' && doctor !== null) {
+        return doctor.full_name || doctor.name || `Dr. ${doctor.last_name || ''}`.trim();
+    }
+    return '';
+};
+
 // Enhanced Coverage Calculator with fallback for empty benefits
 class CoverageCalculator {
     static calculatePatientResponsibility(serviceAmount, eligibilityData) {
@@ -128,7 +137,7 @@ class CoverageCalculator {
             if (benefit.deductible) baseDescription += ` after ${benefit.deductible} deductible`;
             if (benefit.coinsurance) baseDescription += ` with ${benefit.coinsurance}% coinsurance`;
         } else {
-            baseDescription = 'Coverage details limited for nutritional codes';
+            baseDescription = 'Coverage details limited for Medical Care codes';
         }
 
         if (isEstimated) {
@@ -533,7 +542,7 @@ const CardPaymentForm = ({
                     patient_name: client.name || `${bookingData.patient.firstName} ${bookingData.patient.lastName}`,
                     patient_dob: insuranceData.m_dob || "2001-09-10",
                     dietitian_id: bookingData.appointment?.providerId,
-                    provider_name: bookingData.appointment?.doctor || '',
+                    provider_name: getDoctorName(bookingData.appointment?.doctor),
                     service_date: new Date(bookingData.appointment?.date).toISOString().split('T')[0],
                     amount_paid: totalAmount.toString(),
                     status: 'Not Sent',
@@ -1066,9 +1075,10 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
 
             // Step 2: Run eligibility check
             const eligibilityResult = await healthieAPI.runEligibilityCheck({
-                policyId: policyResult.policies[0]?.id,
+                policyId: policyResult.policies[policyResult.policies?.length - 1]?.id,
                 serviceCodes: "claim_md"
             });
+            console.log('Raw Eligibility Result:', eligibilityResult);
 
             // Step 3: Process eligibility response with enhanced error handling
             const eligibilityResponse = handleEligibilityResponse(eligibilityResult.data);
@@ -1105,7 +1115,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
 
             } else {
                 // Handle ineligible case
-                setError(`${eligibilityResponse.messages}. You can proceed with self-pay or request a superbill for potential reimbursement.`);
+                setError(`${eligibilityResponse?.messages[0]?.message || 'Unable to verify insurance eligibility at this time'}. You can proceed with self-pay or request a superbill for potential reimbursement.`);
                 setInsuranceData(prev => ({
                     ...prev,
                     clientId: client.id,
@@ -1486,7 +1496,9 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                                 { bookingData.appointment?.doctor && (
                                     <Grid item size={ { xs: 12, sm: 6 } }>
                                         <Typography variant="body2" color="textSecondary">Doctor:</Typography>
-                                        <Typography variant="body2" fontWeight={ 500 }>{ bookingData.appointment.doctor }</Typography>
+                                        <Typography variant="body2" fontWeight={ 500 }>
+                                            { getDoctorName(bookingData.appointment.doctor) }
+                                        </Typography>
                                     </Grid>
                                 ) }
 
