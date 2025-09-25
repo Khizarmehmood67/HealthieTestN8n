@@ -44,7 +44,7 @@ function App() {
     patient: null,
     payment: null,
   });
-
+  const [isInsuranceChecked, setIsInsuranceChecked] = useState(false);
   const updateBookingData = (key, value) => {
     setBookingData(prev => ({ ...prev, [key]: value }));
   };
@@ -81,6 +81,8 @@ function App() {
               updateBookingData('location', location);
               nextStep();
             } }
+            setIsInsuranceChecked={ setIsInsuranceChecked }
+            isInsuranceChecked={ isInsuranceChecked }
           />
         );
       case STEPS.AVAILABILITY:
@@ -98,6 +100,7 @@ function App() {
           <DoctorSelector
             location={ bookingData.location }
             service={ bookingData.service }
+            isInsuranceChecked={ isInsuranceChecked }
             onNext={ (appointment) => {
               updateBookingData('appointment', appointment);
               nextStep();

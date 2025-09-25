@@ -1,16 +1,20 @@
 import React, { useState, useEffect, use } from 'react';
 import { Box, Typography, Grid, Card, CardContent, Button, TextField, MenuItem, Autocomplete } from '@mui/material';
 import { LocationOn } from '@mui/icons-material';
+import { Checkbox } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import US_STATES from '../data/UsStates';  // Your states array
 import healthieAPI from '../services/healthieAPI';
-const LocationSelector = ({ onNext }) => {
+const LocationSelector = ({ onNext, setIsInsuranceChecked, isInsuranceChecked }) => {
     const [selectedLocation, setSelectedLocation] = useState(null);
     const [Locations, setLocations] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const theme = useTheme();
 
+    const handleCheckboxChange = (event) => {
+        setIsInsuranceChecked(event.target.checked);
+    };
     // Handle selection change
     const handleSelect = (event, newValue) => {
         setSelectedLocation(newValue);
@@ -47,6 +51,7 @@ const LocationSelector = ({ onNext }) => {
     if (error) {
         return <Typography>Error: { error }</Typography>;
     }
+    console.log("selectedLocation", selectedLocation);
 
     return (
         <Box sx={ { py: 2 } }>
@@ -89,7 +94,17 @@ const LocationSelector = ({ onNext }) => {
                     </MenuItem>
                 ) }
             />
-
+            { selectedLocation?.location === "Ohio" && (
+                <Box sx={ { display: 'flex', alignItems: 'center', justifyContent: "flex-end", gap: 2 } }>
+                    Are you proceeding with insurance?
+                    <Checkbox
+                        variant="primary"
+                        checked={ isInsuranceChecked }
+                        onChange={ handleCheckboxChange }
+                    />
+                </Box>
+            )
+            }
             <Box sx={ { display: 'flex', justifyContent: 'flex-end', mt: 4 } }>
                 <Button
                     variant="contained"

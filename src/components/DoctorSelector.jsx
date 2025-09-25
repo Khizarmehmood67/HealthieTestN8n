@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import {
     Box, Typography, Grid, Card, CardContent, Button, Avatar,
-    CircularProgress, IconButton, Paper, Chip, ToggleButton, ToggleButtonGroup
+    CircularProgress, IconButton, Paper, Chip, ToggleButton
 } from '@mui/material';
-import { AccessTime, Star, ChevronLeft, ChevronRight, Person, Groups } from '@mui/icons-material';
+import { Checkbox } from '@mui/material';
+import { AccessTime, Star, ChevronLeft, ChevronRight, Person, Groups, Check } from '@mui/icons-material';
 import healthieAPI from '../services/healthieAPI';
 import { useTheme } from '@mui/material/styles';
 import { format, addDays, startOfWeek, parseISO, isSameDay, startOfDay, endOfDay } from 'date-fns';
 import US_STATES from '../data/UsStates';
 
-const DoctorSelector = ({ location, service, onNext }) => {
+const DoctorSelector = ({ location, service, onNext, isInsuranceChecked }) => {
     const [currentWeek, setCurrentWeek] = useState(new Date());
     const [availableSlots, setAvailableSlots] = useState([]);
     const [selectedSlot, setSelectedSlot] = useState(null);
@@ -40,17 +41,16 @@ const DoctorSelector = ({ location, service, onNext }) => {
         if (location && service && doctors.length > 0) {
             fetchAllData();
         }
-    }, [currentWeek, providerMode, doctors]);
+    }, [currentWeek, doctors]);
 
     const fetchDoctors = async () => {
         try {
             const stateCode = US_STATES.find(state => state.name === location.location)?.code;
             const doctorsData = await healthieAPI.getProviders(stateCode, service.id);
             if (doctorsData.organizationMembers) {
-                const filteredDoctors = doctorsData.organizationMembers.filter(member =>
-                    member.appointment_types?.some(type => type.id === service.id)
-                );
-
+                const filteredDoctors = doctorsData.organizationMembers
+                    .filter(member => member.appointment_types?.some(type => type.id === service.id))
+                    .filter(doctor => !isInsuranceChecked || doctor.id !== "10086000");
                 setDoctors(filteredDoctors || []);
             }
         } catch (error) {
@@ -100,7 +100,6 @@ const DoctorSelector = ({ location, service, onNext }) => {
                 allSlots = slotArrays.flat();
             }
 
-            console.log('Raw available slots:', allSlots);
             setAvailableSlots(allSlots);
             processAvailableSlotsIntoTimeSlots(allSlots);
 
@@ -122,7 +121,6 @@ const DoctorSelector = ({ location, service, onNext }) => {
             slotsByDay[dayKey] = [];
         });
 
-        console.log('Processing', slots.length, 'available slots');
 
         // Process each slot from the API
         slots.forEach((slot, index) => {
@@ -133,7 +131,6 @@ const DoctorSelector = ({ location, service, onNext }) => {
 
             // Skip fully booked slots or ones with existing appointments
             if (slot.is_fully_booked || slot.appointment_id) {
-                console.log(`Skipping booked slot: ${slot.date}`);
                 return;
             }
 
@@ -188,14 +185,11 @@ const DoctorSelector = ({ location, service, onNext }) => {
 
                 slotsByDay[dayKey] = uniqueSlots;
             }
-
-            console.log(`Day ${dayKey}: ${slotsByDay[dayKey].length} available slots`);
         });
 
         setTimeSlotsByDay(slotsByDay);
     };
 
-    console.log("timeSlotsByDay", timeSlotsByDay);
 
     const handleSlotSelect = (slot) => {
         setSelectedSlot(slot);
@@ -284,7 +278,7 @@ const DoctorSelector = ({ location, service, onNext }) => {
                 </ToggleButton>
             </ToggleButtonGroup> */}
 
-            { availableSlots.length === 0 && !loading && (
+            { availableSlots.length === 0 && (
                 <Box sx={ { mb: 3, display: 'flex', alignItems: 'center', gap: 2, justifyContent: "space-between" } }>
                     <Button variant='contained' sx={ { color: "#fff" } }>
                         Don't see a time? Text us
@@ -360,139 +354,146 @@ const DoctorSelector = ({ location, service, onNext }) => {
             ) }
 
             {/* Calendar View */ }
-            { loading ? (
-                <Box sx={ { display: 'flex', justifyContent: 'center', py: 8 } }>
-                    <CircularProgress sx={ { color: theme.palette.primary.main } } />
-                    <Typography variant="body2" sx={ { ml: 2 } }>
-                        Loading availability...
-                    </Typography>
-                </Box>
-            ) : (
-                <Paper elevation={ 0 } sx={ { border: '1px solid #e0e0e0', borderRadius: '8px', overflow: 'hidden' } }>
-                    {/* Week Navigation */ }
-                    <Box sx={ { display: 'flex', alignItems: 'center', backgroundColor: '#f8f9fa', borderBottom: '1px solid #e0e0e0', position: "relative" } }>
-                        <IconButton onClick={ () => navigateWeek(-1) } size="small" sx={ { position: "absolute" } }>
-                            <ChevronLeft />
-                        </IconButton>
 
-                        <Grid container sx={ { flex: 1 } }>
-                            { weekDays.map((day, index) => (
-                                <Grid item size={ { xs: 3, md: 1.714 } } key={ day.toISOString() }>
-                                    <Box
-                                        sx={ {
-                                            textAlign: 'center',
-                                            py: { xs: 1, sm: 2 },
-                                            mr: "-1px",
-                                            borderRight: index < weekDays.length - 1 ? '1px solid #e0e0e0' : 'none',
-                                            backgroundColor: isSameDay(day, new Date()) ? '#e8f4fd' : 'transparent'
-                                        } }
-                                    >
-                                        <Typography variant="caption" color="textSecondary" sx={ { display: { xs: 'none', sm: 'block' }, } }>
-                                            { index === Math.floor(weekDays.length / 2) ? getWeeksFromNow() : '\u00A0' }
-                                        </Typography>
-                                        <Typography variant="subtitle2" fontWeight={ 600 } sx={ { fontSize: { xs: '0.7rem', sm: '0.875rem' } } }>
-                                            { format(day, 'EEE') }
-                                        </Typography>
-                                        <Typography variant="body2" color="textSecondary" sx={ { fontSize: { xs: '0.65rem', sm: '0.875rem' } } }>
-                                            { format(day, 'MMM d') }
-                                        </Typography>
-                                    </Box>
-                                </Grid>
-                            )) }
-                        </Grid>
-
-                        <IconButton onClick={ () => navigateWeek(1) } size="small" sx={ { position: "absolute", right: 0 } }>
-                            <ChevronRight />
-                        </IconButton>
+            <Paper elevation={ 0 } sx={ { border: '1px solid #e0e0e0', borderRadius: '8px', overflow: 'hidden', position: "relative" } }>
+                {/* Week Navigation */ }
+                { loading &&
+                    <Box sx={ {
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center'
+                    } }>
+                        <CircularProgress sx={ { color: theme.palette.primary.main } } />
                     </Box>
+                }
+                <Box sx={ { display: 'flex', alignItems: 'center', backgroundColor: '#f8f9fa', borderBottom: '1px solid #e0e0e0', position: "relative" } }>
+                    <IconButton onClick={ () => navigateWeek(-1) } size="small" sx={ { position: "absolute" } }>
+                        <ChevronLeft />
+                    </IconButton>
 
-                    {/* Time Slots Grid */ }
-                    <Box sx={ { minHeight: { xs: '300px', sm: '400px' }, overflowX: { xs: 'auto', md: 'hidden' } } }>
-                        <Box sx={ { display: 'flex', minWidth: { xs: '700px', md: 'auto' } } }>
-                            { weekDays.map((day, dayIndex) => {
-                                const dayKey = format(day, 'yyyy-MM-dd');
-                                const slots = timeSlotsByDay[dayKey] || [];
-                                const isPastDay = day < startOfDay(new Date());
+                    <Grid container sx={ { flex: 1 } }>
+                        { weekDays.map((day, index) => (
+                            <Grid item size={ { xs: 3, md: 1.714 } } key={ day.toISOString() }>
+                                <Box
+                                    sx={ {
+                                        textAlign: 'center',
+                                        py: { xs: 1, sm: 2 },
+                                        mr: "-1px",
+                                        borderRight: index < weekDays.length - 1 ? '1px solid #e0e0e0' : 'none',
+                                        backgroundColor: isSameDay(day, new Date()) ? '#e8f4fd' : 'transparent'
+                                    } }
+                                >
+                                    <Typography variant="caption" color="textSecondary" sx={ { display: { xs: 'none', sm: 'block' }, } }>
+                                        { index === Math.floor(weekDays.length / 2) ? getWeeksFromNow() : '\u00A0' }
+                                    </Typography>
+                                    <Typography variant="subtitle2" fontWeight={ 600 } sx={ { fontSize: { xs: '0.7rem', sm: '0.875rem' } } }>
+                                        { format(day, 'EEE') }
+                                    </Typography>
+                                    <Typography variant="body2" color="textSecondary" sx={ { fontSize: { xs: '0.65rem', sm: '0.875rem' } } }>
+                                        { format(day, 'MMM d') }
+                                    </Typography>
+                                </Box>
+                            </Grid>
+                        )) }
+                    </Grid>
 
-                                return (
-                                    <Box
-                                        key={ day.toISOString() }
-                                        sx={ {
-                                            flex: 1,
-                                            borderRight: dayIndex < weekDays.length - 1 ? '1px solid #e0e0e0' : 'none',
-                                            backgroundColor: isPastDay ? '#fafafa' : 'white',
-                                            minWidth: { xs: '100px', sm: 'auto' },
-                                            minHeight: { xs: 'auto', md: '400px' }
-                                        } }
-                                    >
-                                        <Box sx={ { p: { xs: 0.5, sm: 1 }, maxHeight: { xs: '300px', sm: '400px' }, overflowY: 'auto' } }>
-                                            { slots.length === 0 ? (
-                                                <Typography
-                                                    variant="caption"
-                                                    color="textSecondary"
+                    <IconButton onClick={ () => navigateWeek(1) } size="small" sx={ { position: "absolute", right: 0 } }>
+                        <ChevronRight />
+                    </IconButton>
+                </Box>
+
+                {/* Time Slots Grid */ }
+                <Box sx={ { minHeight: { xs: '300px', sm: '400px' }, overflowX: { xs: 'auto', md: 'hidden' } } }>
+                    <Box sx={ { display: 'flex', minWidth: { xs: '700px', md: 'auto' } } }>
+                        { weekDays.map((day, dayIndex) => {
+                            const dayKey = format(day, 'yyyy-MM-dd');
+                            const slots = timeSlotsByDay[dayKey] || [];
+                            const isPastDay = day < startOfDay(new Date());
+
+                            return (
+                                <Box
+                                    key={ day.toISOString() }
+                                    sx={ {
+                                        flex: 1,
+                                        borderRight: dayIndex < weekDays.length - 1 ? '1px solid #e0e0e0' : 'none',
+                                        backgroundColor: isPastDay ? '#fafafa' : 'white',
+                                        minWidth: { xs: '100px', sm: 'auto' },
+                                        minHeight: { xs: 'auto', md: '400px' }
+                                    } }
+                                >
+                                    <Box sx={ { p: { xs: 0.5, sm: 1 }, maxHeight: { xs: '300px', sm: '400px' }, overflowY: 'auto' } }>
+                                        { slots.length === 0 ? (
+                                            <Typography
+                                                variant="caption"
+                                                color="textSecondary"
+                                                sx={ {
+                                                    display: 'block',
+                                                    textAlign: 'center',
+                                                    mt: 2,
+                                                    fontSize: { xs: '0.65rem', sm: '0.75rem' }
+                                                } }
+                                            >
+                                                { isPastDay ? 'Past date' : 'No slots' }
+                                            </Typography>
+                                        ) : (
+                                            slots.map((slot) => (
+                                                <Button
+                                                    key={ slot.id }
+                                                    variant="outlined"
+                                                    fullWidth
+                                                    size="small"
+                                                    onClick={ () => handleSlotSelect(slot) }
+                                                    disabled={ !slot.available || isPastDay }
                                                     sx={ {
-                                                        display: 'block',
-                                                        textAlign: 'center',
-                                                        mt: 2,
-                                                        fontSize: { xs: '0.65rem', sm: '0.75rem' }
+                                                        mb: 0.5,
+                                                        py: { xs: 0.5, sm: 1 },
+                                                        px: { xs: 0.5, sm: 1 },
+                                                        fontSize: { xs: '0.65rem', sm: '0.75rem' },
+                                                        fontWeight: 400,
+                                                        minWidth: 0,
+                                                        flexDirection: "column",
+                                                        color: "#000",
+                                                        borderColor: selectedSlot?.id === slot.id ? theme.palette.primary.main : '#e0e0e0',
+                                                        backgroundColor: selectedSlot?.id === slot.id ? theme.palette.primary.light : 'white',
+                                                        '&:hover': {
+                                                            borderColor: theme.palette.primary.main,
+                                                            backgroundColor: '#f0f7ff'
+                                                        },
+                                                        '&:disabled': {
+                                                            backgroundColor: '#f5f5f5',
+                                                            color: '#999'
+                                                        }
                                                     } }
                                                 >
-                                                    { isPastDay ? 'Past date' : 'No slots' }
-                                                </Typography>
-                                            ) : (
-                                                slots.map((slot) => (
-                                                    <Button
-                                                        key={ slot.id }
-                                                        variant="outlined"
-                                                        fullWidth
-                                                        size="small"
-                                                        onClick={ () => handleSlotSelect(slot) }
-                                                        disabled={ !slot.available || isPastDay }
-                                                        sx={ {
-                                                            mb: 0.5,
-                                                            py: { xs: 0.5, sm: 1 },
-                                                            px: { xs: 0.5, sm: 1 },
-                                                            fontSize: { xs: '0.65rem', sm: '0.75rem' },
-                                                            fontWeight: 400,
-                                                            minWidth: 0,
-                                                            flexDirection: "column",
-                                                            color: "#000",
-                                                            borderColor: selectedSlot?.id === slot.id ? theme.palette.primary.main : '#e0e0e0',
-                                                            backgroundColor: selectedSlot?.id === slot.id ? theme.palette.primary.light : 'white',
-                                                            '&:hover': {
-                                                                borderColor: theme.palette.primary.main,
-                                                                backgroundColor: '#f0f7ff'
-                                                            },
-                                                            '&:disabled': {
-                                                                backgroundColor: '#f5f5f5',
-                                                                color: '#999'
-                                                            }
-                                                        } }
-                                                    >
-                                                        { slot.time }
-                                                        { providerMode === 'any' && slot.doctor && (
-                                                            <Typography
-                                                                variant="caption"
-                                                                sx={ {
-                                                                    display: 'block',
-                                                                    fontSize: '0.6rem',
-                                                                    opacity: 0.7
-                                                                } }
-                                                            >
-                                                                { slot.doctor.full_name?.split(' ')[0] }
-                                                            </Typography>
-                                                        ) }
-                                                    </Button>
-                                                ))
-                                            ) }
-                                        </Box>
+                                                    { slot.time }
+                                                    { providerMode === 'any' && slot.doctor && (
+                                                        <Typography
+                                                            variant="caption"
+                                                            sx={ {
+                                                                display: 'block',
+                                                                fontSize: '0.6rem',
+                                                                opacity: 0.7
+                                                            } }
+                                                        >
+                                                            { slot.doctor.full_name?.split(' ')[0] }
+                                                        </Typography>
+                                                    ) }
+                                                </Button>
+                                            ))
+                                        ) }
                                     </Box>
-                                );
-                            }) }
-                        </Box>
+                                </Box>
+                            );
+                        }) }
                     </Box>
-                </Paper>
-            ) }
+                </Box>
+            </Paper>
+
 
             {/* Selected Summary */ }
             { selectedSlot && (
