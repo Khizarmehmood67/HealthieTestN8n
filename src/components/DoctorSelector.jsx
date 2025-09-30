@@ -281,7 +281,7 @@ const DoctorSelector = ({ location, service, onNext, isInsuranceChecked }) => {
             { availableSlots.length === 0 && (
                 <Box sx={ { mb: 3, display: 'flex', alignItems: 'center', gap: 2, justifyContent: "space-between" } }>
                     <Button variant='contained' sx={ { color: "#fff" } }>
-                        Don't see a time? Text us
+                        Email us
                     </Button>
                 </Box>
             ) }

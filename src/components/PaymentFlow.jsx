@@ -815,6 +815,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         requestSuperbill: false,
         verified: false,
         m_dob: null,
+        eligibilityResultMessage: null,
         eligibilityId: null,
         benefits: null,
         eligibilityMessages: [],
@@ -1039,7 +1040,7 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         e.preventDefault();
         setLoading(true);
         setError(null);
-
+        let eligibilityResultMessages = null
         try {
             // Step 1: Create or get client first
             let client = await healthieAPI.getClientByEmail(bookingData.patient.email);
@@ -1079,9 +1080,12 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
                 serviceCodes: "claim_md"
             });
             console.log('Raw Eligibility Result:', eligibilityResult);
-
+            if (eligibilityResult.data.runEligibilityCheck.messages != null) {
+                eligibilityResultMessages = eligibilityResult.data.runEligibilityCheck;
+            }
             // Step 3: Process eligibility response with enhanced error handling
             const eligibilityResponse = handleEligibilityResponse(eligibilityResult.data);
+            console.log('Processed Eligibility Response:', eligibilityResponse);
 
             if (eligibilityResponse.eligible) {
                 // Calculate coverage using the enhanced calculator
@@ -1115,12 +1119,13 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
 
             } else {
                 // Handle ineligible case
-                setError(`${eligibilityResponse?.messages[0]?.message || 'Unable to verify insurance eligibility at this time'}. You can proceed with self-pay or request a superbill for potential reimbursement.`);
+                setError(`${eligibilityResponse?.reason || 'Unable to verify insurance eligibility at this time'}. You can proceed with self-pay.`);
                 setInsuranceData(prev => ({
                     ...prev,
                     clientId: client.id,
                     verified: false,
                     billingType: 'self-pay',
+                    hasInsurance: false,
                     eligibilityMessages: eligibilityResponse.messages,
                     eligibilityId: eligibilityResponse.eligibility_check?.id || null
                 }));
@@ -1139,8 +1144,9 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
 
         } catch (error) {
             console.error('Insurance eligibility check error:', error);
+            console.log("in error", insuranceData);
 
-            let errorMessage = 'Unable to verify insurance eligibility at this time.';
+            let errorMessage = eligibilityResultMessages?.messages[0]?.message || error || 'Unable to verify insurance eligibility at this time.';
             if (error.message.includes('not found')) {
                 errorMessage = 'Insurance plan or member information not found. Please verify your details.';
             } else if (error.message.includes('invalid')) {
