@@ -89,6 +89,7 @@ function App() {
         return (
           <ServiceSelector
             location={ bookingData.location }
+            isInsuranceChecked={ isInsuranceChecked }
             onNext={ (service) => {
               updateBookingData('service', service);
               nextStep();

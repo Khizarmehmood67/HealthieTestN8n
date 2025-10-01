@@ -4,7 +4,7 @@ import { MedicalServices, AccessTime, AttachMoney } from '@mui/icons-material';
 import HealthieAPI from '../services/healthieAPI';  // Assuming this is your API service
 import { useTheme } from '@mui/material/styles';
 
-const ServiceSelector = ({ location, onNext }) => {
+const ServiceSelector = ({ location, onNext, isInsuranceChecked }) => {
     const [services, setServices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedService, setSelectedService] = useState(null);
@@ -19,7 +19,7 @@ const ServiceSelector = ({ location, onNext }) => {
                 // Fetch the offerings from the Healthie API
                 const response = await HealthieAPI.getAppointmentTypes();
                 if (response) {
-                    const filterServices = response.filter((appt) => appt.bookable_by_groups === false)
+                    const filterServices = response.filter((appt) => appt.bookable_by_groups === false && (!isInsuranceChecked || !appt.name.includes('Tirzepatide')))
                     setServices(filterServices);
                 }
             } catch (error) {

@@ -252,6 +252,9 @@ const DoctorSelector = ({ location, service, onNext, isInsuranceChecked }) => {
         return `IN ${diff} WEEKS`;
     };
 
+    const TEXT_NUMBER = '3035221286';
+    const EMAIL_ADDRESS = 'urgent@recoverydelivered.com';
+
     return (
         <Box sx={ { py: 4 } }>
             <Typography variant="h5" fontWeight={ 600 } color="#1a1a1a" gutterBottom sx={ { mb: 1 } }>
@@ -278,13 +281,42 @@ const DoctorSelector = ({ location, service, onNext, isInsuranceChecked }) => {
                 </ToggleButton>
             </ToggleButtonGroup> */}
 
-            { availableSlots.length === 0 && (
-                <Box sx={ { mb: 3, display: 'flex', alignItems: 'center', gap: 2, justifyContent: "space-between" } }>
-                    <Button variant='contained' sx={ { color: "#fff" } }>
-                        Email us
-                    </Button>
-                </Box>
-            ) }
+            {/* { availableSlots.length === 0 && ( */ }
+            <Box sx={ { mb: 1.5, display: { xs: 'block', sm: 'flex' }, alignItems: 'center', gap: 2 } }>
+                <Typography variant="body2" color="textSecondary">
+                    Don't see a time, Need to see a provider today?
+                </Typography>
+                <Button
+                    variant='contained'
+                    component="a" // Use 'a' component to enable the href
+                    href={ `mailto:${EMAIL_ADDRESS}` } // Mailto protocol
+                    sx={ {
+                        color: "#fff",
+                        maxWidth: 120,
+                        padding: "6px 8px",
+                        lineHeight: 1.2,
+                        // Hide on small screens (mobile)
+                        display: { xs: 'none', sm: 'block' }
+                    } }
+                >
+                    Email us
+                </Button>
+                <Button
+                    variant='contained'
+                    component="a" // Use 'a' component to enable the href
+                    href={ `tel:${TEXT_NUMBER}` } // Tel protocol
+                    sx={ {
+                        color: "#fff",
+                        maxWidth: 90,
+                        mt: 1,
+                        // Hide on medium/large screens (web/desktop)
+                        display: { xs: 'block', sm: 'none' }
+                    } }
+                >
+                    Text us
+                </Button>
+            </Box>
+            {/* ) } */ }
 
             {/* Doctor Selection */ }
             { providerMode === 'specific' && (
