@@ -1,17 +1,19 @@
-import React, { use } from 'react';
+import React from 'react';
 import {
     Box, Typography, Card, CardContent, Button, Divider,
-    List, ListItem, ListItemIcon, ListItemText, Alert, Chip
+    List, ListItem, ListItemIcon, ListItemText, Alert
 } from '@mui/material';
 import {
-    CheckCircle, Email, VideoCall, Event, Person, LocationOn, AttachMoney
+    CheckCircle, Email, Event, Person, LocationOn, AttachMoney
 } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
+
 const BookingConfirmation = ({ bookingData }) => {
     const handleNewBooking = () => {
         window.location.reload();
     };
     const theme = useTheme();
+
     return (
         <Box sx={ { maxWidth: 600, mx: 'auto', py: 4 } }>
             <Box sx={ { textAlign: 'center', mb: 4 } }>
@@ -22,11 +24,11 @@ const BookingConfirmation = ({ bookingData }) => {
                 <Typography variant="body1" color="#5f6368">
                     Your appointment has been successfully scheduled
                 </Typography>
-                {/* { bookingData.payment && (
+                { bookingData.payment?.confirmationCode && (
                     <Typography variant="h6" color="#4285f4" sx={ { mt: 2 } }>
-                        Confirmation: { bookingData.payment.confirmation }
+                        Confirmation: { bookingData.payment.confirmationCode }
                     </Typography>
-                ) } */}
+                ) }
             </Box>
 
             <Card sx={ { mb: 4, borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' } }>
@@ -42,7 +44,7 @@ const BookingConfirmation = ({ bookingData }) => {
                             <Box>
                                 <Typography variant="body2" color="#5f6368">Doctor</Typography>
                                 <Typography variant="body1" fontWeight={ 500 }>
-                                    { bookingData.appointment?.doctor }
+                                    { bookingData.appointment?.doctorName || bookingData.appointment?.doctor?.full_name || 'N/A' }
                                 </Typography>
                             </Box>
                         </Box>
