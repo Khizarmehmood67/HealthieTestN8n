@@ -838,13 +838,13 @@ const PaymentFlow = ({ bookingData, onComplete }) => {
         };
         console.log("appointmentData", appointmentData);
 
-        // setTimeout(() => {
-        //     onComplete({
-        //         appointment: appointmentData,
-        //         payment: paymentData,
-        //         confirmation: appointmentData.confirmationCode
-        //     });
-        // }, 3000);
+        setTimeout(() => {
+            onComplete({
+                appointment: appointmentData,
+                payment: paymentData,
+                confirmation: appointmentData.confirmationCode
+            });
+        }, 3000);
     };
 
     const handlePaymentError = (errorMessage) => {
