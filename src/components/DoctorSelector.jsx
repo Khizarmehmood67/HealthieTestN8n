@@ -9,6 +9,7 @@ import healthieAPI from '../services/healthieAPI';
 import { useTheme } from '@mui/material/styles';
 import { format, addDays, startOfWeek, parseISO, isSameDay, startOfDay, endOfDay } from 'date-fns';
 import US_STATES from '../data/UsStates';
+import { formatInTimeZone } from 'date-fns-tz';
 
 const DoctorSelector = ({ location, service, onNext, isInsuranceChecked }) => {
     const [currentWeek, setCurrentWeek] = useState(new Date());
@@ -112,7 +113,7 @@ const DoctorSelector = ({ location, service, onNext, isInsuranceChecked }) => {
         }
     };
 
-    const processAvailableSlotsIntoTimeSlots = (slots) => {
+const processAvailableSlotsIntoTimeSlots = (slots) => {
         const slotsByDay = {};
 
         // Initialize all days
@@ -135,17 +136,25 @@ const DoctorSelector = ({ location, service, onNext, isInsuranceChecked }) => {
             }
 
             const slotDate = new Date(slot.date);
-            const dayKey = format(slotDate, 'yyyy-MM-dd');
+            const dayKey = format(parseISO(slot.date), 'yyyy-MM-dd');
 
             if (!slotsByDay.hasOwnProperty(dayKey)) return;
 
             // Find the doctor for this slot
             const slotDoctor = doctors.find(d => d.id === slot.user_id);
 
+            // 3. Format the time using the user's declared time zone (userTimeZone).
+            //    This is the crucial change to fix the display issue.
+            const displayTime = formatInTimeZone(
+                slotDate,
+                userTimeZone, // Variable containing 'America/Los_Angeles' or similar
+                'h:mm a'
+            );
+
             // Create the processed slot
             const processedSlot = {
                 id: `${slot.user_id}-${slot.date}`,
-                time: format(slotDate, 'h:mm a'),
+                time: displayTime, // <-- NOW uses the time formatted in the user's time zone
                 datetime: slot.date,
                 available: !slot.is_fully_booked && !slot.appointment_id,
                 providerId: slot.user_id,
@@ -170,8 +179,6 @@ const DoctorSelector = ({ location, service, onNext, isInsuranceChecked }) => {
         Object.keys(slotsByDay).forEach(dayKey => {
             // Sort by time first
             slotsByDay[dayKey].sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
-
-            // For "any" mode, remove duplicate times (keep first provider's slot)
             if (providerMode === 'any') {
                 const uniqueSlots = [];
                 const seenTimes = new Set();
@@ -189,7 +196,6 @@ const DoctorSelector = ({ location, service, onNext, isInsuranceChecked }) => {
 
         setTimeSlotsByDay(slotsByDay);
     };
-
 
     const handleSlotSelect = (slot) => {
         setSelectedSlot(slot);
