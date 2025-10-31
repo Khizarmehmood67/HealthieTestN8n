@@ -248,6 +248,7 @@ const processAvailableSlotsIntoTimeSlots = (slots) => {
         setSelectedSlot(null);
     };
 
+    
     const getWeeksFromNow = () => {
         const today = new Date();
         const diff = Math.ceil((weekDays[0] - today) / (1000 * 60 * 60 * 24 * 7));
