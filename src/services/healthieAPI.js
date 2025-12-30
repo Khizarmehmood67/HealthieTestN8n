@@ -1,6 +1,6 @@
 class HealthieAPI {
   constructor () {
-    this.baseURL = '/api/healthie';
+    this.baseURL = 'https://schedule.recoverydelivered.com/api/healthie';
     // this.apiKey = process.env.REACT_APP_HEALTHIE_TOKEN;
   }
   // gh_live_xdD0KLeNnMF1OnaApr9CHUp11bYUUKJxnXQZ5F5xK8IaLOn8rzoQ61oEAQVi47hD	   client key
@@ -253,7 +253,6 @@ query  {
                   clients_can_book
                   bookable_by_groups
                   insurance_billing_enabled
-                  valid_state_licensing_for
 price_and_cpt_price{
   price
   cpt_price

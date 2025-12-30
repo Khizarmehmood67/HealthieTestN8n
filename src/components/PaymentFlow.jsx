@@ -175,7 +175,6 @@ const InsuranceClaimSubmission = ({
     const handleSubmit = async (e) => {
         e.preventDefault();
         setProcessing(true);
-
         try {
             // Use existing client
             const client = { id: insuranceData.clientId };
@@ -248,7 +247,7 @@ const InsuranceClaimSubmission = ({
 
             // Create appointment
             const appointment = await healthieAPI.createAppointment(appointmentData);
-
+            const ghlAppointment = await handleAppointmentSubmitToGHL(bookingData.appointment?.date)
             // Success
             onSuccess({
                 appointmentId: appointment?.id || 'pending',
@@ -274,7 +273,6 @@ const InsuranceClaimSubmission = ({
             setProcessing(false);
         }
     };
-
     return (
         <Box component="form" onSubmit={ handleSubmit }>
             <ClaimStatusIndicator
@@ -331,7 +329,30 @@ const InsuranceClaimSubmission = ({
         </Box>
     );
 };
+const handleAppointmentSubmitToGHL = async (selectedDate) => {
+    const contactId = localStorage.getItem('ghl_contact_id');
 
+    if (!contactId) {
+        console.error("No contact ID found. Please complete the first step.");
+        return;
+    }
+
+    const payload = {
+        contactId: contactId,
+        startTime: selectedDate,
+        calendarId: process.env.REACT_APP_GHL_APP_CAL_ID || "pbg1UhD6yz3rNXUx4HU6",
+    };
+
+    const response = await fetch(process.env.REACT_APP_N8N_WEBHOOK_GHL_APP, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (response.ok) {
+        // localStorage.removeItem('ghl_contact_id');
+    }
+};
 // Card Payment Form Component (for self-pay and superbill)
 const CardPaymentForm = ({
     bookingData,
@@ -461,7 +482,7 @@ const CardPaymentForm = ({
             }
 
             const appointment = await healthieAPI.createAppointment(appointmentData);
-
+            const ghlAppointment = await handleAppointmentSubmitToGHL(bookingData.appointment?.date)
             onSuccess({
                 appointmentId: appointment?.id || 'pending',
                 billingItemId: billingResult?.id,
@@ -599,6 +620,9 @@ const CardPaymentForm = ({
                 <Typography variant="caption" color="text.secondary">
                     Secured by Stripe & HIPAA-compliant processing
                 </Typography>
+                <Button type="submit"
+                    variant="contained"
+                    onClick={() => handleAppointmentSubmitToGHL(bookingData.appointment?.date)}>Create appointment</Button>
             </Box>
         </Box>
     );

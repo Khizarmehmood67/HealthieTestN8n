@@ -28,9 +28,11 @@ const PatientForm = ({
         contact_type: 'In Person'
     });
 
-    const handlePatientSubmit = async () => {
+    const handlePatientSubmit = async (e) => {
+        if (e) e.preventDefault();
         if (patientData) {
             onNext(patientData)
+            console.log("hit in the submit form ");
             const agentPayload = {
                 name: `${patientData.firstName} ${patientData.lastName}`,
                 firstName: patientData.firstName,
@@ -44,9 +46,16 @@ const PatientForm = ({
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                mode: 'no-cors',
+                // mode: 'no-cors',
                 body: JSON.stringify(agentPayload)
             });
+            if (response.ok) {
+                const data = await response.json();
+                console.log("Response from n8n:", data); // Now you will see the contactId!
+                if (data.body.opportunity) {
+                    localStorage.setItem('ghl_contact_id', data.body.opportunity.contactId);
+                }
+            }
 
         }
     }
@@ -60,7 +69,7 @@ const PatientForm = ({
                 </Typography>
             </Box>
 
-            <form onSubmit={ handlePatientSubmit }>
+            <form onSubmit={(e) => handlePatientSubmit(e)}>
                 <Grid container spacing={ 2 }>
                     <Grid item size={ { xs: 12, md: 6 } }>
                         <TextField
