@@ -329,7 +329,7 @@ const InsuranceClaimSubmission = ({
         </Box>
     );
 };
-const handleAppointmentSubmitToGHL = async (selectedDate) => {
+const handleAppointmentSubmitToGHL = async (selectedDate, bookingData) => {
     const contactId = localStorage.getItem('ghl_contact_id');
 
     if (!contactId) {
@@ -340,17 +340,21 @@ const handleAppointmentSubmitToGHL = async (selectedDate) => {
     const payload = {
         contactId: contactId,
         startTime: selectedDate,
+        name: bookingData.patient.firstName,
+        email: bookingData.patient.email,
+        phone: bookingData.patient.phone,
+        appointmentDate: bookingData.appointment.date || "",
         calendarId: process.env.REACT_APP_GHL_APP_CAL_ID || "pbg1UhD6yz3rNXUx4HU6",
     };
 
-    const response = await fetch(process.env.REACT_APP_N8N_WEBHOOK_GHL_APP, {
+    const response = await fetch(process.env.REACT_APP_N8N_WEBHOOK_GHL_USER_SIGN, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
 
     if (response.ok) {
-        // localStorage.removeItem('ghl_contact_id');
+        localStorage.removeItem('ghl_contact_id');
     }
 };
 // Card Payment Form Component (for self-pay and superbill)
@@ -482,7 +486,7 @@ const CardPaymentForm = ({
             }
 
             const appointment = await healthieAPI.createAppointment(appointmentData);
-            const ghlAppointment = await handleAppointmentSubmitToGHL(bookingData.appointment?.date)
+            const ghlAppointment = await handleAppointmentSubmitToGHL(bookingData.appointment?.date, bookingData)
             onSuccess({
                 appointmentId: appointment?.id || 'pending',
                 billingItemId: billingResult?.id,
@@ -502,6 +506,7 @@ const CardPaymentForm = ({
     };
 
     return (
+        <>
         <Box component="form" onSubmit={ handleSubmit }>
             <Grid container spacing={ 2 }>
                 <Grid item size={ { xs: 12 } }>
@@ -615,16 +620,30 @@ const CardPaymentForm = ({
                 </Grid>
             </Grid>
 
-            <Box sx={ { display: 'flex', alignItems: 'center', justifyContent: 'center', mt: 2 } }>
+            </Box>
+
+            <Box sx={{ alignItems: 'center', justifyContent: 'center', mt: 2 }}>
                 <Lock sx={ { fontSize: 14, color: 'text.secondary', mr: 0.5 } } />
                 <Typography variant="caption" color="text.secondary">
                     Secured by Stripe & HIPAA-compliant processing
                 </Typography>
                 <Button type="submit"
                     variant="contained"
-                    onClick={() => handleAppointmentSubmitToGHL(bookingData.appointment?.date)}>Create appointment</Button>
+                    onClick={() => {
+                        handleAppointmentSubmitToGHL(bookingData.appointment?.date, bookingData);
+                        onSuccess({
+                            appointmentId: bookingData.appointment?.id || 'pending',
+                            billingItemId: "32",
+                            superbillId: "231",
+                            amount: bookingData.totalAmount,
+                            status: 'succeeded',
+                            clientId: "132",
+                            insuranceClaim: false
+                        });
+                    }
+                    }>Create appointment</Button>
             </Box>
-        </Box>
+        </>
     );
 };
 
