@@ -357,6 +357,30 @@ const handleAppointmentSubmitToGHL = async (selectedDate, bookingData) => {
         localStorage.removeItem('ghl_contact_id');
     }
 };
+
+const handleFormCheckGHL = async (selectedDate, bookingData, user_id) => {
+    const contactId = localStorage.getItem('ghl_contact_id');
+
+    if (!contactId) {
+        console.error("No contact ID found. Please complete the first step.");
+        return;
+    }
+    const payload = {
+        user_id: user_id || "12354102",
+        contactId: contactId,
+        startTime: selectedDate,
+        name: bookingData.patient.firstName,
+        email: bookingData.patient.email,
+        phone: bookingData.patient.phone,
+        appointmentDate: bookingData.appointment.date || "",
+    };
+
+    const response = await fetch(process.env.REACT_APP_GHL_APP_FORM_CHECK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+}
 // Card Payment Form Component (for self-pay and superbill)
 const CardPaymentForm = ({
     bookingData,
@@ -487,6 +511,7 @@ const CardPaymentForm = ({
 
             const appointment = await healthieAPI.createAppointment(appointmentData);
             const ghlAppointment = await handleAppointmentSubmitToGHL(bookingData.appointment?.date, bookingData)
+            const ghlReminderAgent = await handleFormCheckGHL(bookingData.appointment?.date, bookingData, client.id)
             onSuccess({
                 appointmentId: appointment?.id || 'pending',
                 billingItemId: billingResult?.id,
@@ -631,6 +656,7 @@ const CardPaymentForm = ({
                     variant="contained"
                     onClick={() => {
                         handleAppointmentSubmitToGHL(bookingData.appointment?.date, bookingData);
+                        handleFormCheckGHL(bookingData.appointment?.date, bookingData)
                         onSuccess({
                             appointmentId: bookingData.appointment?.id || 'pending',
                             billingItemId: "32",
