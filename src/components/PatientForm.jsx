@@ -51,9 +51,9 @@ const PatientForm = ({
             });
             if (response.ok) {
                 const data = await response.json();
-                console.log("Response from n8n:", data); // Now you will see the contactId!
-                if (data.body.opportunity) {
-                    localStorage.setItem('ghl_contact_id', data.body.opportunity.contactId);
+              const contactId = data?.opportunity?.contactId ?? data?.meta?.contactId;
+              if (contactId) {
+                  localStorage.setItem('ghl_contact_id', contactId);
                 }
             }
 
